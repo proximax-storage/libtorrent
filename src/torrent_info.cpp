@@ -1126,7 +1126,36 @@ namespace {
 			return false;
 		}
 
-		// hash the info-field to calculate info-hash
+        bool isXpxHash = false;
+        bdecode_node const xpx = info.dict_find_string("xpx");
+        if ( xpx )
+        {
+            bdecode_node const fileTree = info.dict_find_dict("file tree");
+            if ( fileTree )
+            {
+                std::pair<string_view, bdecode_node> const file = fileTree.dict_at(0);
+
+                if ( file.second )
+                {
+
+                    std::pair<string_view, bdecode_node> const x = fileTree.dict_at(0);
+                    std::pair<string_view, bdecode_node> const xx = x.second.dict_at(0);
+                    bdecode_node const piecesRoot = xx.second.dict_find_string("pieces root");
+
+                    auto rootHashPtr = piecesRoot.string_ptr();
+                    auto rootHashLen = piecesRoot.string_length();
+                    std::string rootHashStr( rootHashPtr, rootHashLen );
+
+                    auto xpxPtr = xpx.string_ptr();
+                    auto xpxLen = xpx.string_length();
+                    std::string xpxStr( xpxPtr, xpxLen );
+
+                    std::string all = rootHashStr + xpxStr;
+                }
+            }
+        }
+
+        // hash the info-field to calculate info-hash
 		auto section = info.data_section();
 		m_info_hash.v1 = hasher(section).final();
 		m_info_hash.v2 = hasher256(section).final();

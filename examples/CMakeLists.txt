@@ -1,6 +1,7 @@
 project(libtorrent-examples)
 
 set(single_file_examples
+    xpx_test
     simple_client
     custom_storage
     stats_counters
