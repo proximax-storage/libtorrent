@@ -630,12 +630,20 @@ if (ANDROID)
 endif()
 
 if (APPLE)
-	# for ip_notifier
-	target_link_libraries(torrent-rasterbar PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
+    set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT_DIR} /usr/local/Cellar/openssl@1.1/1.1.1i/)
+    set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libcrypto.dylib CACHE FILEPATH "" FORCE)
+    set(OPENSSL_SSL_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libssl.dylib CACHE FILEPATH "" FORCE)
+
+    link_directories(/usr/local/opt/icu4c/lib/)
+    link_directories(/usr/local/opt/openssl@1.1/lib)
+
+    # for ip_notifier
+    target_link_libraries(torrent-rasterbar PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
 endif()
 
 # check if we need to link with libatomic (not needed on MSVC)
 if (NOT Windows)
+    if (NOT APPLE)
 	# TODO: migrate to CheckSourceCompiles in CMake >= 3.19
 	include(CheckCXXSourceCompiles)
 
@@ -663,7 +671,8 @@ if (NOT Windows)
 			unset(CMAKE_REQUIRED_LIBRARIES)
 			target_link_libraries(torrent-rasterbar PUBLIC atomic)
 		endif()
-	endif()
+        endif()
+    endif()
 endif()
 
 feature_option(build_tests "build tests" OFF)
