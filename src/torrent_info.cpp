@@ -1126,56 +1126,10 @@ namespace {
 			return false;
 		}
 
-#ifdef SIRIUS_DRIVE // xpx, "sirius drive"
-
-        bool hashWasSet = false;
-
-        if ( bdecode_node const drivePubKey = info.dict_find_string("sirius drive") )
-        {
-            bdecode_node const fileTree = info.dict_find_dict("file tree");
-            if ( fileTree )
-            {
-                std::pair<string_view, bdecode_node> const file = fileTree.dict_at(0);
-
-                if ( file.second )
-                {
-
-                    std::pair<string_view, bdecode_node> const x = fileTree.dict_at(0);
-                    std::pair<string_view, bdecode_node> const xx = x.second.dict_at(0);
-                    bdecode_node const piecesRoot = xx.second.dict_find_string("pieces root");
-
-                    char const* rootHashPtr = piecesRoot.string_ptr();
-                    int rootHashLen = piecesRoot.string_length();
-
-                    char const*  drivePubKeyPtr = drivePubKey.string_ptr();
-                    int drivePubKeyLen = drivePubKey.string_length();
-
-                    if ( drivePubKeyLen>0 && rootHashLen>0 )
-                    {
-                        auto totalLen = drivePubKeyLen + rootHashLen;
-
-                        auto drivePubKeyInfo = std::make_unique<char[]>( size_t(totalLen) );
-                        std::memcpy( drivePubKeyInfo.get(), drivePubKeyPtr, size_t(drivePubKeyLen) );
-                        std::memcpy( drivePubKeyInfo.get()+drivePubKeyLen, rootHashPtr, size_t(rootHashLen) );
-
-                        m_info_hash.v1 = hasher( drivePubKeyInfo.get(), totalLen ).final();
-                        m_info_hash.v2 = hasher256( drivePubKeyInfo.get(), totalLen ).final();
-                        hashWasSet = true;
-                    }
-                }
-            }
-        }
-#endif // SIRIUS_DRIVE
-
-        // hash the info-field to calculate info-hash
+		// hash the info-field to calculate info-hash
 		auto section = info.data_section();
-#ifdef SIRIUS_DRIVE
-        if (!hashWasSet)
-#endif
-        {
-            m_info_hash.v1 = hasher(section).final();
-            m_info_hash.v2 = hasher256(section).final();
-        }
+		m_info_hash.v1 = hasher(section).final();
+		m_info_hash.v2 = hasher256(section).final();
 		if (info.data_section().size() >= std::numeric_limits<int>::max())
 		{
 			ec = errors::metadata_too_large;
