@@ -2568,7 +2568,7 @@ namespace {
 					}
 #endif
 
-#ifndef SIRIUS_DRIVE // xpx, "sirius drive"
+#ifndef SIRIUS_DRIVE // disable tracker protocol
                     if (!handled)
 					{
 						m_tracker_manager.incoming_packet(packet.from, buf);
