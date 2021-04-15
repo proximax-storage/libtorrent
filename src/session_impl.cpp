@@ -2568,10 +2568,12 @@ namespace {
 					}
 #endif
 
-					if (!handled)
+#ifndef SIRIUS_DRIVE // xpx, "sirius drive"
+                    if (!handled)
 					{
 						m_tracker_manager.incoming_packet(packet.from, buf);
 					}
+#endif
 				}
 			}
 

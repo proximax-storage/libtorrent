@@ -1126,9 +1126,11 @@ namespace {
 			return false;
 		}
 
-        bool isXpxHash = false;
-        bdecode_node const xpx = info.dict_find_string("xpx");
-        if ( xpx )
+#ifdef SIRIUS_DRIVE // xpx, "sirius drive"
+
+        bool hashWasSet = false;
+
+        if ( bdecode_node const drivePubKey = info.dict_find_string("sirius drive") )
         {
             bdecode_node const fileTree = info.dict_find_dict("file tree");
             if ( fileTree )
@@ -1142,23 +1144,38 @@ namespace {
                     std::pair<string_view, bdecode_node> const xx = x.second.dict_at(0);
                     bdecode_node const piecesRoot = xx.second.dict_find_string("pieces root");
 
-                    auto rootHashPtr = piecesRoot.string_ptr();
-                    auto rootHashLen = piecesRoot.string_length();
-                    std::string rootHashStr( rootHashPtr, rootHashLen );
+                    char const* rootHashPtr = piecesRoot.string_ptr();
+                    int rootHashLen = piecesRoot.string_length();
 
-                    auto xpxPtr = xpx.string_ptr();
-                    auto xpxLen = xpx.string_length();
-                    std::string xpxStr( xpxPtr, xpxLen );
+                    char const*  drivePubKeyPtr = drivePubKey.string_ptr();
+                    int drivePubKeyLen = drivePubKey.string_length();
 
-                    std::string all = rootHashStr + xpxStr;
+                    if ( drivePubKeyLen>0 && rootHashLen>0 )
+                    {
+                        auto totalLen = drivePubKeyLen + rootHashLen;
+
+                        auto drivePubKeyInfo = std::make_unique<char[]>( size_t(totalLen) );
+                        std::memcpy( drivePubKeyInfo.get(), drivePubKeyPtr, size_t(drivePubKeyLen) );
+                        std::memcpy( drivePubKeyInfo.get()+drivePubKeyLen, rootHashPtr, size_t(rootHashLen) );
+
+                        m_info_hash.v1 = hasher( drivePubKeyInfo.get(), totalLen ).final();
+                        m_info_hash.v2 = hasher256( drivePubKeyInfo.get(), totalLen ).final();
+                        hashWasSet = true;
+                    }
                 }
             }
         }
+#endif // SIRIUS_DRIVE
 
         // hash the info-field to calculate info-hash
 		auto section = info.data_section();
-		m_info_hash.v1 = hasher(section).final();
-		m_info_hash.v2 = hasher256(section).final();
+#ifdef SIRIUS_DRIVE
+        if (!hashWasSet)
+#endif
+        {
+            m_info_hash.v1 = hasher(section).final();
+            m_info_hash.v2 = hasher256(section).final();
+        }
 		if (info.data_section().size() >= std::numeric_limits<int>::max())
 		{
 			ec = errors::metadata_too_large;

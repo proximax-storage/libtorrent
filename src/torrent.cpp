@@ -7449,7 +7449,10 @@ namespace {
 				}
 			}
 		}
-		if (m_torrent_file->info_hashes().has_v2())
+
+#ifndef SIRIUS_DRIVE // xpx, "sirius drive"
+
+      if (m_torrent_file->info_hashes().has_v2())
 		{
 			// we don't have to worry about computing the v2 hash twice because
 			// if the v1 hash was a truncated v2 hash then the torrent_file should
@@ -7465,6 +7468,7 @@ namespace {
 				return false;
 			}
 		}
+#endif // SIRIUS_DRIVE
 
 		// the torrent's info hash might change
 		// e.g. it could be a hybrid torrent which we only had one of the hashes for
