@@ -333,7 +333,7 @@ void udp_socket::send(udp::endpoint const& ep, span<char const> p
 	}
 
 	// set the DF flag for the socket and clear it again in the destructor
-	set_dont_frag df(m_socket, (flags & dont_fragment)
+	set_dont_frag df(m_socket, false //(flags & dont_fragment)
 		&& aux::is_v4(ep));
 
 	m_socket.send_to(boost::asio::buffer(p.data(), static_cast<std::size_t>(p.size())), ep, 0, ec);

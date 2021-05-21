@@ -17,7 +17,7 @@ set (SOVERSION "${VER_MAJOR}.${VER_MINOR}")
 include(GNUInstallDirs)
 include(GeneratePkgConfig)
 
-option(SIRIUS_DRIVE "remove tracker traffic" OFF)
+option(SIRIUS_DRIVE "remove tracker traffic" ON)
 if (SIRIUS_DRIVE)
   add_definitions(-DSIRIUS_DRIVE)
 endif()
