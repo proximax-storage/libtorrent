@@ -539,7 +539,7 @@ if (NOT BUILD_SHARED_LIBS)
 	set(OPENSSL_USE_STATIC_LIBS ON)
 endif()
 
-add_library(torrent-rasterbar
+add_library(torrent-sirius
 	${sources}
 	${try_signal_sources}
 	${libtorrent_include_files}
@@ -548,7 +548,7 @@ add_library(torrent-rasterbar
 )
 
 # C++ 14 support is required
-target_compile_features(torrent-rasterbar
+target_compile_features(torrent-sirius
 	PUBLIC
 		cxx_std_14
 		cxx_contextual_conversions
@@ -563,13 +563,13 @@ target_compile_features(torrent-rasterbar
 )
 
 if (BUILD_SHARED_LIBS)
-	target_compile_definitions(torrent-rasterbar
+	target_compile_definitions(torrent-sirius
 		PRIVATE TORRENT_BUILDING_SHARED
 		INTERFACE TORRENT_LINKING_SHARED
 	)
 endif()
 
-set_target_properties(torrent-rasterbar
+set_target_properties(torrent-sirius
 	PROPERTIES
 		CXX_VISIBILITY_PRESET "hidden"
 		VISIBILITY_INLINES_HIDDEN "true"
@@ -577,13 +577,13 @@ set_target_properties(torrent-rasterbar
 		SOVERSION ${SOVERSION}
 )
 
-target_include_directories(torrent-rasterbar PUBLIC
+target_include_directories(torrent-sirius PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 	PRIVATE deps/try_signal
 )
 
-target_compile_definitions(torrent-rasterbar
+target_compile_definitions(torrent-sirius
 	PUBLIC
 		$<$<CONFIG:Debug>:TORRENT_USE_ASSERTS>
 		BOOST_ASIO_ENABLE_CANCELIO
@@ -595,14 +595,14 @@ target_compile_definitions(torrent-rasterbar
 		BOOST_ASIO_HAS_STD_CHRONO
 )
 
-target_link_libraries(torrent-rasterbar
+target_link_libraries(torrent-sirius
 	PUBLIC
 		Threads::Threads
 )
 
 # Unconditional platform-specific settings
 if (WIN32)
-	target_link_libraries(torrent-rasterbar
+	target_link_libraries(torrent-sirius
 		PUBLIC
 			bcrypt mswsock ws2_32 Iphlpapi
 			debug dbghelp crypt32
@@ -610,28 +610,28 @@ if (WIN32)
 
 	add_definitions(-D_WIN32_WINNT=0x0600) # target Windows Vista or later
 
-	target_compile_definitions(torrent-rasterbar
+	target_compile_definitions(torrent-sirius
 		PUBLIC WIN32_LEAN_AND_MEAN # prevent winsock1 to be included
 	)
 
 	if (MSVC)
-		target_compile_definitions(torrent-rasterbar
+		target_compile_definitions(torrent-sirius
 			PUBLIC
 				BOOST_ALL_NO_LIB
 				_SCL_SECURE_NO_DEPRECATE _CRT_SECURE_NO_DEPRECATE # disable bogus deprecation warnings on msvc8
 		)
-		target_compile_options(torrent-rasterbar
+		target_compile_options(torrent-sirius
 			PRIVATE
 				/Zc:wchar_t /Zc:forScope # these compiler settings just make the compiler standard conforming
 				/MP # for multi-core compilation
 				/bigobj # increase the number of sections for obj files
 		)
-		set_target_properties(torrent-rasterbar PROPERTIES LINK_FLAGS_RELEASE "/OPT:ICF=5 /OPT:REF")
+		set_target_properties(torrent-sirius PROPERTIES LINK_FLAGS_RELEASE "/OPT:ICF=5 /OPT:REF")
 	endif()
 endif()
 
 if (ANDROID)
-	target_link_libraries(torrent-rasterbar PRIVATE ${CMAKE_DL_LIBS})
+	target_link_libraries(torrent-sirius PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 if (APPLE)
@@ -643,7 +643,7 @@ if (APPLE)
     link_directories(/usr/local/opt/openssl@1.1/lib)
 
     # for ip_notifier
-    target_link_libraries(torrent-rasterbar PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
+    target_link_libraries(torrent-sirius PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
 endif()
 
 # check if we need to link with libatomic (not needed on MSVC)
@@ -674,7 +674,7 @@ if (NOT Windows)
 		else()
 			message(STATUS "Linking with libatomic for atomics support")
 			unset(CMAKE_REQUIRED_LIBRARIES)
-			target_link_libraries(torrent-rasterbar PUBLIC atomic)
+			target_link_libraries(torrent-sirius PUBLIC atomic)
 		endif()
         endif()
     endif()
@@ -689,20 +689,20 @@ feature_option(python-install-system-dir "Install python bindings to the system 
 
 # these options require existing target
 feature_option(dht "enable support for Mainline DHT" ON)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME deprecated-functions DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME deprecated-functions DEFAULT ON
 	DESCRIPTION "enable deprecated functions for backwards compatibility" DISABLED TORRENT_NO_DEPRECATE)
 feature_option(encryption "Enables encryption in libtorrent" ON)
 feature_option(exceptions "build with exception support" ON)
 feature_option(gnutls "build using GnuTLS instead of OpenSSL" OFF)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME extensions DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME extensions DEFAULT ON
 	DESCRIPTION "Enables protocol extensions" DISABLED TORRENT_DISABLE_EXTENSIONS)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME i2p DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME i2p DEFAULT ON
 	DESCRIPTION "build with I2P support" DISABLED TORRENT_USE_I2P=0)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME logging DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME logging DEFAULT ON
 	DESCRIPTION "build with logging" DISABLED TORRENT_DISABLE_LOGGING)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME mutable-torrents DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME mutable-torrents DEFAULT ON
 	DESCRIPTION "Enables mutable torrent support" DISABLED TORRENT_DISABLE_MUTABLE_TORRENTS)
-target_optional_compile_definitions(torrent-rasterbar PUBLIC FEATURE NAME streaming DEFAULT ON
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME streaming DEFAULT ON
 	DESCRIPTION "Enables support for piece deadline" DISABLED TORRENT_DISABLE_STREAMING)
 
 if(NOT gnutls)
@@ -718,10 +718,10 @@ if(NOT gnutls)
 	if(TARGET OpenSSL::SSL)
 		# TODO: needed until https://gitlab.kitware.com/cmake/cmake/issues/19263 is fixed
 		if(WIN32 AND OPENSSL_USE_STATIC_LIBS)
-			target_link_libraries(torrent-rasterbar PRIVATE crypt32)
+			target_link_libraries(torrent-sirius PRIVATE crypt32)
 		endif()
-		target_link_libraries(torrent-rasterbar PUBLIC OpenSSL::SSL)
-		target_compile_definitions(torrent-rasterbar
+		target_link_libraries(torrent-sirius PUBLIC OpenSSL::SSL)
+		target_compile_definitions(torrent-sirius
 			PUBLIC
 				TORRENT_USE_OPENSSL
 				TORRENT_USE_LIBCRYPTO
@@ -740,12 +740,12 @@ if(gnutls OR NOT TARGET OpenSSL::SSL)
 			PURPOSE "Provides HTTPS support to libtorrent"
 	)
 	if(GNUTLS_FOUND)
-		target_link_libraries(torrent-rasterbar PUBLIC GnuTLS::GnuTLS)
-		target_compile_definitions(torrent-rasterbar
+		target_link_libraries(torrent-sirius PUBLIC GnuTLS::GnuTLS)
+		target_compile_definitions(torrent-sirius
 			PUBLIC
 				TORRENT_USE_GNUTLS
 				TORRENT_SSL_PEERS)
-		target_include_directories(torrent-rasterbar PUBLIC
+		target_include_directories(torrent-sirius PUBLIC
 			$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/deps/asio-gnutls/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 		install(DIRECTORY deps/asio-gnutls/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
@@ -756,8 +756,8 @@ endif()
 
 if (NOT GNUTLS_FOUND AND NOT TARGET OpenSSL::SSL)
 	if(TARGET OpenSSL::Crypto)
-		target_link_libraries(torrent-rasterbar PUBLIC OpenSSL::Crypto)
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_USE_LIBCRYPTO)
+		target_link_libraries(torrent-sirius PUBLIC OpenSSL::Crypto)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_USE_LIBCRYPTO)
 	else()
 		find_public_dependency(LibGcrypt)
 		set_package_properties(LibGcrypt
@@ -768,47 +768,47 @@ if (NOT GNUTLS_FOUND AND NOT TARGET OpenSSL::SSL)
 				PURPOSE "Use GCrypt instead of the built-in functions for RC4 and SHA1"
 		)
 		if (LibGcrypt_FOUND)
-			target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_USE_LIBGCRYPT)
-			target_link_libraries(torrent-rasterbar PRIVATE LibGcrypt::LibGcrypt)
+			target_compile_definitions(torrent-sirius PUBLIC TORRENT_USE_LIBGCRYPT)
+			target_link_libraries(torrent-sirius PRIVATE LibGcrypt::LibGcrypt)
 		endif()
 	endif()
 endif()
 
 if (encryption)
-	target_sources(torrent-rasterbar PRIVATE src/pe_crypto)
+	target_sources(torrent-sirius PRIVATE src/pe_crypto)
 else()
-	target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_DISABLE_ENCRYPTION)
+	target_compile_definitions(torrent-sirius PUBLIC TORRENT_DISABLE_ENCRYPTION)
 endif()
 
 if (dht)
-	target_sources(torrent-rasterbar PRIVATE
+	target_sources(torrent-sirius PRIVATE
 		${kademlia_sources}
 		${ed25519_sources}
 		${libtorrent_kademlia_include_files}
 	)
 else()
-	target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_DISABLE_DHT)
+	target_compile_definitions(torrent-sirius PUBLIC TORRENT_DISABLE_DHT)
 endif()
 
 # Boost
 find_public_dependency(Boost REQUIRED)
-target_include_directories(torrent-rasterbar PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories(torrent-sirius PUBLIC ${Boost_INCLUDE_DIRS})
 if (Boost_MAJOR_VERSION LESS_EQUAL 1 AND Boost_MINOR_VERSION LESS 69)
 	find_package(Boost REQUIRED COMPONENTS system)
-	target_link_libraries(torrent-rasterbar PUBLIC ${Boost_SYSTEM_LIBRARY})
+	target_link_libraries(torrent-sirius PUBLIC ${Boost_SYSTEM_LIBRARY})
 endif()
 
 if (exceptions)
 	if (MSVC)
-		target_compile_options(torrent-rasterbar PUBLIC /EHsc)
+		target_compile_options(torrent-sirius PUBLIC /EHsc)
 	else (MSVC)
-		target_compile_options(torrent-rasterbar PUBLIC -fexceptions)
+		target_compile_options(torrent-sirius PUBLIC -fexceptions)
 	endif (MSVC)
 else()
 	if (MSVC)
-		target_compile_definitions(torrent-rasterbar PUBLIC _HAS_EXCEPTIONS=0)
+		target_compile_definitions(torrent-sirius PUBLIC _HAS_EXCEPTIONS=0)
 	else (MSVC)
-		target_compile_options(torrent-rasterbar PUBLIC -fno-exceptions)
+		target_compile_options(torrent-sirius PUBLIC -fno-exceptions)
 	endif (MSVC)
 endif()
 
@@ -818,41 +818,41 @@ if(developer-options)
 	set(asserts "auto" CACHE STRING "use assertions")
 	set_property(CACHE asserts PROPERTY STRINGS auto on off production system)
 	if ("${asserts}" MATCHES "on|production|system")
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_USE_ASSERTS=1)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_USE_ASSERTS=1)
 	endif()
 	if ("${asserts}" STREQUAL "production")
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_PRODUCTION_ASSERTS=1)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_PRODUCTION_ASSERTS=1)
 	elseif("${asserts}" STREQUAL "system")
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_USE_SYSTEM_ASSERTS=1)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_USE_SYSTEM_ASSERTS=1)
 	endif()
 
-	target_optional_compile_definitions(torrent-rasterbar PUBLIC NAME asio-debugging DEFAULT OFF
+	target_optional_compile_definitions(torrent-sirius PUBLIC NAME asio-debugging DEFAULT OFF
 		ENABLED TORRENT_ASIO_DEBUGGING)
-	target_optional_compile_definitions(torrent-rasterbar PUBLIC NAME picker-debugging DEFAULT OFF
+	target_optional_compile_definitions(torrent-sirius PUBLIC NAME picker-debugging DEFAULT OFF
 		ENABLED TORRENT_DEBUG_REFCOUNTS)
 	set(invariant-checks "off" CACHE STRING "")
 	set_property(CACHE invariant-checks PROPERTY STRINGS off on full)
 	if (invariant-checks MATCHES "on|full")
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_USE_INVARIANT_CHECKS=1)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_USE_INVARIANT_CHECKS=1)
 	endif()
 	if (invariant-checks STREQUAL "full")
-		target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_EXPENSIVE_INVARIANT_CHECKS)
+		target_compile_definitions(torrent-sirius PUBLIC TORRENT_EXPENSIVE_INVARIANT_CHECKS)
 	endif()
 
-	target_optional_compile_definitions(torrent-rasterbar PUBLIC NAME utp-log DEFAULT OFF
+	target_optional_compile_definitions(torrent-sirius PUBLIC NAME utp-log DEFAULT OFF
 		ENABLED TORRENT_UTP_LOG_ENABLE)
-	target_optional_compile_definitions(torrent-rasterbar PUBLIC NAME simulate-slow-read DEFAULT OFF
+	target_optional_compile_definitions(torrent-sirius PUBLIC NAME simulate-slow-read DEFAULT OFF
 		ENABLED TORRENT_SIMULATE_SLOW_READ)
 	option(debug-iterators "" OFF)
 	if (debug-iterators)
 		if (MSVC)
-			target_compile_definitions(torrent-rasterbar PUBLIC _ITERATOR_DEBUG_LEVEL=2)
+			target_compile_definitions(torrent-sirius PUBLIC _ITERATOR_DEBUG_LEVEL=2)
 		endif()
 		if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-			target_compile_definitions(torrent-rasterbar PUBLIC _GLIBCXX_DEBUG _GLIBCXX_DEBUG_PEDANTIC)
+			target_compile_definitions(torrent-sirius PUBLIC _GLIBCXX_DEBUG _GLIBCXX_DEBUG_PEDANTIC)
 		endif()
 	endif()
-	target_optional_compile_definitions(torrent-rasterbar PUBLIC NAME profile-calls DEFAULT OFF
+	target_optional_compile_definitions(torrent-sirius PUBLIC NAME profile-calls DEFAULT OFF
 		ENABLED TORRENT_PROFILE_CALLS=1)
 endif()
 
@@ -861,13 +861,13 @@ endif()
 # linking against a libtorrent binary built with C++11 can still define
 # TORRENT_CXX11_ABI
 if ("${CMAKE_CXX_STANDARD}" STREQUAL "11")
-	target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_CXX11_ABI)
+	target_compile_definitions(torrent-sirius PUBLIC TORRENT_CXX11_ABI)
 endif()
 
 # There is little to none support for using pkg-config with MSVC and most users won't bother with it.
 # However, msys is a linux-like platform on Windows that do support/prefer using pkg-config.
 if (NOT MSVC)
-	generate_and_install_pkg_config_file(torrent-rasterbar libtorrent-rasterbar)
+	generate_and_install_pkg_config_file(torrent-sirius sirius)
 endif()
 
 include(CheckCXXCompilerFlag)
@@ -878,7 +878,7 @@ if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
 	file(RELATIVE_PATH CMAKE_INSTALL_LIBDIR "${CMAKE_INSTALL_PREFIX}" "${CMAKE_INSTALL_LIBDIR}")
 endif()
 
-install(TARGETS torrent-rasterbar EXPORT LibtorrentRasterbarTargets
+install(TARGETS torrent-sirius EXPORT LibtorrentRasterbarTargets
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -944,7 +944,7 @@ endif()
 if(build_tests)
 	enable_testing()
 	# this will make some internal functions available in the DLL interface
-	target_compile_definitions(torrent-rasterbar PUBLIC TORRENT_EXPORT_EXTRA)
+	target_compile_definitions(torrent-sirius PUBLIC TORRENT_EXPORT_EXTRA)
 	add_subdirectory(test)
 endif()
 
