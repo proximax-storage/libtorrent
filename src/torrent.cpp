@@ -2364,22 +2364,21 @@ bool is_downloading_state(int const st)
 				hashes.resize(torrent_file().orig_files().blocks_in_piece2(m_checking_piece));
 
 			span<sha256_hash> v2_span(hashes);
-#ifdef SIRIUS_DRIVE
-            dispatch( m_ses.get_context(), [ self   = shared_from_this(),
-                                             hashes = std::move(hashes),
-                                             p      = m_checking_piece] ()
-                {
-                    sha1_hash h;
-                    storage_error error(errors::no_error);
-                    self->on_piece_hashed(std::move(hashes), p, h, error);
-                } );
-//            get_handle().async_call( &torrent::on_piece_hashed, std::move(hashes), p, h, error );
-#else
+//#ifdef SIRIUS_DRIVE
+//            dispatch( m_ses.get_context(), [ self   = shared_from_this(),
+//                                             hashes = std::move(hashes),
+//                                             p      = m_checking_piece] ()
+//                {
+//                    sha1_hash h;
+//                    storage_error error(errors::no_error);
+//                    self->on_piece_hashed(std::move(hashes), p, h, error);
+//                } );
+//#else
 			m_ses.disk_thread().async_hash(m_storage, m_checking_piece, v2_span, flags
 				, [self = shared_from_this(), hashes = std::move(hashes)]
 				(piece_index_t p, sha1_hash const& h, storage_error const& error) mutable
 				{ self->on_piece_hashed(std::move(hashes), p, h, error); });
-#endif
+//#endif
 			++m_checking_piece;
 			if (m_checking_piece >= m_torrent_file->end_piece()) break;
 		}
@@ -2462,7 +2461,6 @@ bool is_downloading_state(int const st)
 		boost::tribool hash_passed[2]
 			= { boost::indeterminate, boost::indeterminate };
 
-#ifndef SIRIUS_DRIVE
 		if (!settings().get_bool(settings_pack::disable_hash_checks))
 		{
 			if (torrent_file().info_hashes().has_v1())
@@ -2474,10 +2472,13 @@ bool is_downloading_state(int const st)
 			}
 		}
 		else
-#endif // #ifndef SIRIUS_DRIVE
 		{
 			hash_passed[0] = hash_passed[1] = true;
 		}
+
+//#ifdef SIRIUS_DRIVE
+//        hash_passed[1] = true;
+//#endif // #ifndef SIRIUS_DRIVE
 
 		if ((hash_passed[0] && !hash_passed[1]) || (!hash_passed[0] && hash_passed[1]))
 		{
@@ -2546,21 +2547,21 @@ bool is_downloading_state(int const st)
 				block_hashes.resize(torrent_file().orig_files().blocks_in_piece2(m_checking_piece));
 
             span<sha256_hash> v2_span(block_hashes);
-#ifdef SIRIUS_DRIVE
-            dispatch( m_ses.get_context(), [ self   = shared_from_this(),
-                                             hashes = std::move(block_hashes),
-                                             p      = m_checking_piece] ()
-                {
-                    sha1_hash h;
-                    storage_error error(errors::no_error);
-                    self->on_piece_hashed(std::move(hashes), p, h, error);
-                } );
-#else
+//#ifdef SIRIUS_DRIVE
+//            dispatch( m_ses.get_context(), [ self   = shared_from_this(),
+//                                             hashes = std::move(block_hashes),
+//                                             p      = m_checking_piece] ()
+//                {
+//                    sha1_hash h;
+//                    storage_error error(errors::no_error);
+//                    self->on_piece_hashed(std::move(hashes), p, h, error);
+//                } );
+//#else
 			m_ses.disk_thread().async_hash(m_storage, m_checking_piece, v2_span, flags
 				, [self = shared_from_this(), hashes = std::move(block_hashes)]
 				(piece_index_t p, sha1_hash const& h, storage_error const& e)
 				{ self->on_piece_hashed(std::move(hashes), p, h, e); });
-#endif
+//#endif
 			++m_checking_piece;
 			m_ses.deferred_submit_jobs();
 #ifndef TORRENT_DISABLE_LOGGING
@@ -4137,11 +4138,13 @@ namespace {
 		{
 			// if there was an enoent or eof error the block hashes array may be incomplete
 			// bail if we've hit the end of the valid hashes
+//#ifndef SIRIUS_DRIVE
 			if (block_hashes[i].is_all_zeros())
 			{
 				ret = false;
 				break;
 			}
+//#endif
 			auto const result = get_hash_picker().set_block_hash(piece
 				, i * default_block_size, block_hashes[i]);
 
