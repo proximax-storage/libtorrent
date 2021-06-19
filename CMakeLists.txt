@@ -691,7 +691,7 @@ feature_option(python-install-system-dir "Install python bindings to the system 
 feature_option(dht "enable support for Mainline DHT" ON)
 target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME deprecated-functions DEFAULT ON
 	DESCRIPTION "enable deprecated functions for backwards compatibility" DISABLED TORRENT_NO_DEPRECATE)
-feature_option(encryption "Enables encryption in libtorrent" ON)
+feature_option(encryption "Enables encryption in libtorrent" OFF)
 feature_option(exceptions "build with exception support" ON)
 feature_option(gnutls "build using GnuTLS instead of OpenSSL" OFF)
 target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME extensions DEFAULT ON
