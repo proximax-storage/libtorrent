@@ -57,6 +57,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <functional>
 #include <memory>
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "sirius_drive/session_delegate.h"
+#endif
+
+
 namespace libtorrent {
 
 	struct peer_connection;
@@ -310,6 +315,15 @@ namespace aux {
 #endif
 
 		virtual ~session_interface() {}
+
+#ifdef SIRIUS_DRIVE_MULTI
+        virtual void setDelegate( std::weak_ptr<session_delegate> delegate ) = 0;
+        virtual std::weak_ptr<session_delegate> delegate() = 0;
+
+        virtual void setPrivateKey( sha256_hash key ) = 0;
+        virtual const sha256_hash& privateKey() = 0;
+
+#endif
 	};
 }}
 

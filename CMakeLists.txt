@@ -19,7 +19,12 @@ include(GeneratePkgConfig)
 
 option(SIRIUS_DRIVE "remove tracker traffic" ON)
 if (SIRIUS_DRIVE)
-  add_definitions(-DSIRIUS_DRIVE)
+	add_definitions(-DSIRIUS_DRIVE)
+endif()
+
+option(SIRIUS_DRIVE_MULTI "remove tracker traffic" ON)
+if (SIRIUS_DRIVE_MULTI)
+	add_definitions(-DSIRIUS_DRIVE_MULTI)
 endif()
 
 set(libtorrent_include_files

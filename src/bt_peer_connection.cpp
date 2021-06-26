@@ -44,6 +44,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <vector>
 #include <functional>
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "libtorrent/torrent.hpp"
+#include "libtorrent/session.hpp"
+#endif
+
 #ifndef TORRENT_DISABLE_LOGGING
 #include "libtorrent/hex.hpp" // to_hex
 #endif
@@ -1014,7 +1019,8 @@ namespace {
 
 		TORRENT_ASSERT(received >= 0);
 		received_bytes(0, received);
-#ifdef SIRIUS_DRIVE
+
+#ifdef SIRIUS_DRIVE_MULTI
 		if (m_recv_buffer.packet_size() != 13+1024)
 #else
         if (m_recv_buffer.packet_size() != 13)
@@ -1027,17 +1033,20 @@ namespace {
 
 		span<char const> recv_buffer = m_recv_buffer.get();
 
-		peer_request r;
+#ifdef SIRIUS_DRIVE_MULTI
+        peer_request r;
+        const char* ptr = recv_buffer.data() + 1 + 1024;
+        r.piece = piece_index_t(aux::read_int32(ptr));
+        r.start = aux::read_int32(ptr);
+        r.length = aux::read_int32(ptr);
+
+#else
+        peer_request r;
 		const char* ptr = recv_buffer.data() + 1;
 		r.piece = piece_index_t(aux::read_int32(ptr));
 		r.start = aux::read_int32(ptr);
 		r.length = aux::read_int32(ptr);
-
-//#ifdef SIRIUS_DRIVE
-//
-//        //int x = aux::read_int32(ptr);
-//        TORRENT_UNUSED(x);
-//#endif
+#endif
 
 		incoming_request(r);
 	}
@@ -2263,19 +2272,22 @@ namespace {
 	{
 		INVARIANT_CHECK;
 
-#ifdef SIRIUS_DRIVE
-//        send_message(msg_request, counters::num_outgoing_request
-//            , static_cast<int>(r.piece), r.start, r.length, 0x01020304 );
+#ifdef SIRIUS_DRIVE_MULTI
+
         std::array<char,1024> reciept;
+
+        auto local_endpoint = this->local_endpoint();
+        this->remote();
 
         char msg[4 + 1 + 4 + 4 + 4 + reciept.size()];
         char* ptr = msg;
         aux::write_int32(sizeof(msg)-4, ptr);
         aux::write_uint8(msg_request, ptr);
+        memcpy(ptr,reciept.data(),reciept.size());
+        ptr += reciept.size();
         aux::write_int32(static_cast<int>(r.piece), ptr);
         aux::write_int32(r.start, ptr);
         aux::write_int32(r.length, ptr);
-        memcpy(ptr,reciept.data(),reciept.size());
         send_buffer({msg, sizeof(msg)});
 
 #else

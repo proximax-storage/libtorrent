@@ -1362,7 +1362,20 @@ namespace aux {
 			// set to true the first time post_session_stats() is
 			// called and we post the headers alert
 			bool m_posted_stats_header = false;
-		};
+
+#ifdef SIRIUS_DRIVE_MULTI
+        public:
+            void setDelegate( std::weak_ptr<session_delegate> delegate ) override { m_delegate = delegate; }
+            std::weak_ptr<session_delegate> delegate() override { return m_delegate; }
+
+            void setPrivateKey( sha256_hash key ) override { m_privateKey = key; }
+            const sha256_hash& privateKey() override { return m_privateKey; }
+
+            std::weak_ptr<session_delegate> m_delegate;
+            sha256_hash                     m_privateKey;
+#endif
+
+        };
 
 #ifndef TORRENT_DISABLE_LOGGING
 		struct tracker_logger : request_callback

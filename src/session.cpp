@@ -547,4 +547,13 @@ namespace {
 #endif
 	}
 
+#ifdef SIRIUS_DRIVE_MULTI
+    void session::setDelegate( std::weak_ptr<session_delegate> delegate ) { m_impl->setDelegate(delegate); }
+    std::weak_ptr<session_delegate> session::delegate() { return m_impl->delegate(); }
+
+    void session::setPrivateKey( sha256_hash key ) { m_impl->setPrivateKey( key ); }
+    const sha256_hash& session::privateKey() { return m_impl->privateKey(); }
+
+#endif
+
 }
