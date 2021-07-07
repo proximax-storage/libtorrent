@@ -17,15 +17,15 @@ set (SOVERSION "${VER_MAJOR}.${VER_MINOR}")
 include(GNUInstallDirs)
 include(GeneratePkgConfig)
 
-option(SIRIUS_DRIVE "remove tracker traffic" ON)
+option(SIRIUS_DRIVE "changes for sirius drive" ON)
 if (SIRIUS_DRIVE)
 	add_definitions(-DSIRIUS_DRIVE)
 endif()
 
-option(SIRIUS_DRIVE_MULTI "remove tracker traffic" ON)
-if (SIRIUS_DRIVE_MULTI)
-	add_definitions(-DSIRIUS_DRIVE_MULTI)
-endif()
+#option(SIRIUS_DRIVE_MULTI "changes for sirius drive-multi" ON)
+#if (SIRIUS_DRIVE_MULTI)
+#	add_definitions(-DSIRIUS_DRIVE_MULTI)
+#endif()
 
 set(libtorrent_include_files
 	add_torrent_params
