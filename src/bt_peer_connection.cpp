@@ -81,6 +81,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/hasher.hpp"
 #endif
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include <iostream>
+#endif
+
 namespace libtorrent {
 
 #if !defined TORRENT_DISABLE_ENCRYPTION
@@ -723,16 +727,27 @@ namespace {
 		TORRENT_ASSERT(t);
 
 		// add handshake to the send buffer
-        static const char version_string[] = "Sirius FileExChange";//"BitTorrent protocol";
-		const int string_len = sizeof(version_string) - 1;
 
-		char handshake[1 + string_len + 8 + 20 + 20];
-		char* ptr = handshake;
+#ifdef SIRIUS_DRIVE_MULTI
+        // Reserve buffer size of handshake to our public key
+        static const char version_string[] = "Sirius FileExChange";
+        const int         string_len       = sizeof(version_string) - 1;
+        char handshake[1 + string_len + 8 + 20 + 20 + 32];
+#else
+        static const char version_string[] = "BitTorrent protocol";
+        const int         string_len       = sizeof(version_string) - 1;
+        char handshake[1 + string_len + 8 + 20 + 20];
+#endif
+
+        char* ptr = handshake;
+
 		// length of version string
-		aux::write_uint8(string_len, ptr);
-		// protocol identifier
+        aux::write_uint8(string_len, ptr);
+
+        // protocol identifier
 		std::memcpy(ptr, version_string, string_len);
 		ptr += string_len;
+
 		// 8 zeroes
 		std::memset(ptr, 0, 8);
 
@@ -777,7 +792,22 @@ namespace {
 		std::memcpy(ptr, ih.data(), ih.size());
 		ptr += 20;
 
-		std::memcpy(ptr, m_our_peer_id.data(), 20);
+#ifdef SIRIUS_DRIVE_MULTI
+        // Add our public key to handshake
+
+        std::shared_ptr<torrent> torrent = associated_torrent().lock();
+        TORRENT_ASSERT(torrent);
+        std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+
+        // delegate must be assigned in Session creator
+        TORRENT_ASSERT(delegate);
+
+        std::memcpy(ptr, delegate->publicKey().data(), 32);
+        ptr += 32;
+#endif
+
+        // peer id
+        std::memcpy(ptr, m_our_peer_id.data(), 20);
 
 		TORRENT_ASSERT(!ih.is_all_zeros());
 
@@ -1021,6 +1051,7 @@ namespace {
 		received_bytes(0, received);
 
 #ifdef SIRIUS_DRIVE_MULTI
+        // Check packet size (with receipt data - download channel hash, replicator public key, download size)
 		if (m_recv_buffer.packet_size() != 13+1024)
 #else
         if (m_recv_buffer.packet_size() != 13)
@@ -1034,6 +1065,7 @@ namespace {
 		span<char const> recv_buffer = m_recv_buffer.get();
 
 #ifdef SIRIUS_DRIVE_MULTI
+        // Extract receipt data - download channel hash, replicator public key, download size
         peer_request r;
         const char* ptr = recv_buffer.data() + 1 + 1024;
         r.piece = piece_index_t(aux::read_int32(ptr));
@@ -1135,9 +1167,21 @@ namespace {
 			if (is_disconnecting()) return;
 		}
 
+#ifdef SIRIUS_DRIVE_MULTI
+        std::shared_ptr<torrent> torrent = associated_torrent().lock();
+        TORRENT_ASSERT(torrent);
+        std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+
+        delegate->onPiece(piece_bytes);
+        //todo
+#endif
 		incoming_piece_fragment(piece_bytes);
 		if (!m_recv_buffer.packet_finished()) return;
 
+#ifdef SIRIUS_DRIVE_MULTI
+        //delegate->onPiece(piece_bytes);
+        //todo
+#endif
 		incoming_piece(p, recv_buffer.data() + header_size);
 	}
 
@@ -2090,6 +2134,14 @@ namespace {
 			}
 		}
 
+#ifdef SIRIUS_DRIVE_MULTI
+        auto const signature = root.dict_find_string_value("sign");
+        if ( !signature.empty() )
+        {
+            std::cerr << "<<><><>> sign for '" << m_dbgOurPeerName << "': " << signature << " (from)" << std::endl << std::flush;
+        }
+#endif
+
 		// if we're finished and this peer is uploading only
 		// disconnect it
 		if (t->is_finished() && upload_only()
@@ -2126,6 +2178,13 @@ namespace {
 		std::int64_t const cur_protocol_dl = statistics().last_protocol_downloaded();
 #endif
 
+#ifdef SIRIUS_DRIVE_MULTI
+//        static char const* message_name[] = {"choke", "unchoke", "interested", "not_interested"
+//                , "have", "bitfield", "request", "piece", "cancel", "dht_port", "", "", ""
+//                , "suggest_piece", "have_all", "have_none", "reject_request", "allowed_fast",
+//            "18", "19", "msg_extended", "msg_hash_request", "msg_hashes", "msg_hash_reject", };
+//        std::cerr << "dispatch_sessage: " << m_remote << "  " << message_name[packet_type] << std::endl << std::flush;
+#endif
 		// call the handler for this packet type
 		switch (packet_type)
 		{
@@ -2274,7 +2333,9 @@ namespace {
 
 #ifdef SIRIUS_DRIVE_MULTI
 
+        // Write receipt data - download channel hash, replicator public key, download size
         std::array<char,1024> reciept;
+        //todo
 
         auto local_endpoint = this->local_endpoint();
         this->remote();
@@ -2524,6 +2585,21 @@ namespace {
 			TORRENT_ASSERT(ext.find(val) == ext.end());
 			ext.insert(val);
 		}
+#endif
+
+#ifdef SIRIUS_DRIVE_MULTI
+        // add signature
+        {
+            std::shared_ptr<torrent> torrent = associated_torrent().lock();
+            TORRENT_ASSERT(torrent);
+            std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+
+            std::array<uint8_t,64> signature;
+            delegate->sign( reinterpret_cast<const uint8_t*>(pid().data()), pid().size(), signature );
+
+            handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
+        }
+
 #endif
 
 		std::vector<char> dict_msg;
@@ -3314,12 +3390,15 @@ namespace {
 			recv_buffer = m_recv_buffer.get();
 
 			int const packet_size = recv_buffer[0];
-//          static const char protocol_string[] = "\x13" "BitTorrent protocol";
+#ifdef SIRIUS_DRIVE_MULTI
             static const char protocol_string[] = "\x13" "Sirius FileExChange";
-
+#else
+            static const char protocol_string[] = "\x13" "BitTorrent protocol";
+#endif
 			if (packet_size != 19 ||
 				recv_buffer.first(20) != span<char const>{protocol_string, 20})
 			{
+
 #if !defined TORRENT_DISABLE_ENCRYPTION
 #ifndef TORRENT_DISABLE_LOGGING
 				peer_log(peer_log_alert::info, "ENCRYPTION"
@@ -3390,7 +3469,7 @@ namespace {
 			}
 
 			m_state = state_t::read_info_hash;
-			m_recv_buffer.reset(28);
+            m_recv_buffer.reset(28);
 		}
 
 		// fall through
@@ -3398,7 +3477,7 @@ namespace {
 		{
 			received_bytes(0, int(bytes_transferred));
 			bytes_transferred = 0;
-			TORRENT_ASSERT(m_recv_buffer.packet_size() == 28);
+            TORRENT_ASSERT(m_recv_buffer.packet_size() == 28);
 
 			if (!m_recv_buffer.packet_finished()) return;
 			recv_buffer = m_recv_buffer.get();
@@ -3498,7 +3577,12 @@ namespace {
 			if (is_disconnecting()) return;
 
 			m_state = state_t::read_peer_id;
-			m_recv_buffer.reset(20);
+
+#ifdef SIRIUS_DRIVE_MULTI
+            m_recv_buffer.reset(20+32);
+#else
+            m_recv_buffer.reset(20);
+#endif
 		}
 
 		// fall through
@@ -3513,7 +3597,11 @@ namespace {
 				TORRENT_ASSERT(!m_recv_buffer.packet_finished()); // TODO
 				return;
 			}
-			TORRENT_ASSERT(m_recv_buffer.packet_size() == 20);
+#ifdef SIRIUS_DRIVE_MULTI
+			TORRENT_ASSERT(m_recv_buffer.packet_size() == 20+32);
+#else
+            TORRENT_ASSERT(m_recv_buffer.packet_size() == 20);
+#endif
 
 			if (!m_recv_buffer.packet_finished()) return;
 			recv_buffer = m_recv_buffer.get();
@@ -3533,8 +3621,25 @@ namespace {
 					, hex_pid, identify_client(peer_id(recv_buffer.data())).c_str(), ascii_pid);
 			}
 #endif
+
+#ifdef SIRIUS_DRIVE_MULTI
+            // Save client public key to this peer connection
+            std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
+            // get peer id (random sequence)
+            peer_id pid;
+            std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32 + 20, pid.data());
+
+            // save dbg session name
+            {
+                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                m_dbgOurPeerName = delegate->dbgOurPeerName();
+            }
+
+#else
 			peer_id pid;
 			std::copy(recv_buffer.begin(), recv_buffer.begin() + 20, pid.data());
+#endif
 
 			// now, let's see if this connection should be closed
 			peer_connection* p = t->find_peer(pid);

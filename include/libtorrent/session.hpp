@@ -302,8 +302,7 @@ namespace aux {
         void setDelegate( std::weak_ptr<session_delegate> delegate );
         std::weak_ptr<session_delegate> delegate();
 
-        void setPrivateKey( sha256_hash key );
-        const sha256_hash& privateKey();
+        const char* m_dbgOurPeerName = "undefined";
 #endif
 	};
 
