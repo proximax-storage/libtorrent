@@ -47,6 +47,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifdef SIRIUS_DRIVE_MULTI
 #include "libtorrent/torrent.hpp"
 #include "libtorrent/session.hpp"
+#include "sirius_drive/session_delegate.h"
 #endif
 
 #ifndef TORRENT_DISABLE_LOGGING

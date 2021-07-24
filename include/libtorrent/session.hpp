@@ -45,16 +45,16 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/session_params.hpp"
 #include "libtorrent/session_types.hpp" // for session_flags_t
 
-#ifdef SIRIUS_DRIVE_MULTI
-#include "sirius_drive/session_delegate.h"
-#endif
-
 #if TORRENT_ABI_VERSION == 1
 #include "libtorrent/fingerprint.hpp"
 #include <cstdio> // for snprintf
 #endif
 
 namespace libtorrent {
+
+#ifdef SIRIUS_DRIVE_MULTI
+class session_delegate;
+#endif
 
 TORRENT_VERSION_NAMESPACE_3
 	struct plugin;

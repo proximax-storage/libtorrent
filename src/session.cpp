@@ -43,6 +43,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/mmap_disk_io.hpp"
 #include "libtorrent/posix_disk_io.hpp"
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "sirius_drive/session_delegate.h"
+#endif
+
 namespace libtorrent {
 
 #ifndef TORRENT_DISABLE_EXTENSIONS
