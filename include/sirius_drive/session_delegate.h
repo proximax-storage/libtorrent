@@ -38,9 +38,17 @@ class session_delegate {
         // It will be called,
         // when a piece is received,
         // for accumulating downloaded data size
-        virtual void onPiece( size_t pieceSize )
+        virtual void onPieceReceived( size_t pieceSize )
         {
             // now replicator does nothing in this case
+        }
+
+        // It will be called,
+        // when a piece is sent,
+        // for accumulating sent data size
+        virtual void onPieceSent( size_t pieceSize )
+        {
+            // now client does nothing in this case
         }
 
         // It will be called to sign random sequence (for handshake)
@@ -64,7 +72,20 @@ class session_delegate {
 
         virtual const std::array<uint8_t,32>& publicKey() = 0;
 
+        // It will be called when 'client' connects to 'replicator' (handshake)
         virtual const std::optional<std::array<uint8_t,32>> downloadChannelId() = 0;
+
+        // It will be called when 'replicator' answers to 'client' (extended handshake)
+        virtual uint64_t downloadedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;
+
+        // It will be called when 'client' receives an answer from 'replicator' (extended handshake)
+        // 'downloadedSize' should be set to proper value (last 'downloadedSize' of peviuos peer_connection)
+        virtual void setDownloadedSize( uint64_t downloadedSize ) = 0;
+
+        // They will be called when 'client' requests a piece from 'replicator' (handshake)
+        virtual uint64_t downloadedSize() = 0;
+        virtual uint64_t requestedSize() = 0;
+
 
         virtual const char* dbgOurPeerName() = 0;
     };

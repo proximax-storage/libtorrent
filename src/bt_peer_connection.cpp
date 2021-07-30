@@ -92,7 +92,7 @@ namespace libtorrent {
 namespace {
 
 #ifdef SIRIUS_DRIVE_MULTI
-	constexpr std::size_t handshake_len = 68+32; // 32 is the lenght of public key
+	constexpr std::size_t handshake_len = 68 + 32+32; // publicKey[32], downloadChannelId[32]
 #else
     constexpr std::size_t handshake_len = 68;
 #endif
@@ -737,7 +737,7 @@ namespace {
         // Reserve buffer size of handshake to our public key
         static const char version_string[] = "Sirius FileExChange";
         const int         string_len       = sizeof(version_string) - 1;
-        char handshake[1 + string_len + 8 + 20 + 20 + 32]; // 32 is the lenght of public key
+        char handshake[1 + string_len + 8 + 20 + 20 + 32+32]; // publicKey[32], downloadChannelId[32]
 #else
         static const char version_string[] = "BitTorrent protocol";
         const int         string_len       = sizeof(version_string) - 1;
@@ -809,6 +809,10 @@ namespace {
         TORRENT_ASSERT(delegate);
 
         std::memcpy(ptr, delegate->publicKey().data(), 32);
+        ptr += 32;
+
+        if ( delegate->downloadChannelId() )
+            std::memcpy(ptr, delegate->downloadChannelId().value().data(), 32);
         ptr += 32;
 
         //todo++
@@ -1206,12 +1210,14 @@ namespace {
 
 #ifdef SIRIUS_DRIVE_MULTI
 #pragma mark --on-piece--
+            //todo++
+            std::cerr << "@@@@@@@@<< " << piece_bytes << std::endl << std::flush;
 
         std::shared_ptr<torrent> torrent = associated_torrent().lock();
         TORRENT_ASSERT(torrent);
         std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
 
-        delegate->onPiece(piece_bytes);
+        delegate->onPieceReceived(piece_bytes);
         //todo
 #endif
 		incoming_piece_fragment(piece_bytes);
@@ -2177,14 +2183,16 @@ namespace {
 #pragma mark --verify--
 
         string_view signatureStr = root.dict_find_string_value("sign");
-        const auto signature = *reinterpret_cast<const std::array<uint8_t,64>*>(&signatureStr[0]);
-        if ( signature.empty() )
+        if ( signatureStr.empty() )
         {
             //invalid_encrypt_handshake
             disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
         }
         else
         {
+            //todo check signature size
+            const auto signature = *reinterpret_cast<const std::array<uint8_t,64>*>(&signatureStr[0]);
+
 //            std::cerr << "<<><><>> verify by '" << m_dbgOurPeerName << "'" << std::endl;
 //            std::cerr << ">>>> key: " << toString(m_peer_public_key) << std::endl;
 //            std::cerr << ">>>> pid: " << pid() << std::endl;
@@ -2201,6 +2209,14 @@ namespace {
             {
                 disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
             }
+
+//todo        if ( !delegate->isClient() )
+//            {
+//                string_view downloadChannelId = root.dict_find_string_value("chId");
+//                //todo check downloadChannelId size
+//                m_download_channel_id = *reinterpret_cast<const std::array<uint8_t,32>*>(&downloadChannelId[0]);
+//            }
+
         }
 #endif
 
@@ -2689,6 +2705,17 @@ namespace {
             }
 
             handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
+
+            //downloadChannelId
+//todo        {
+//                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+//                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+//                if ( delegate->isClient() )
+//                {
+//                    handshake["chId"] = std::string( std::begin(delegate->downloadChannelId()),
+//                                                     std::end(delegate->downloadChannelId()) );
+//                }
+//            }
         }
 
 #endif
@@ -3670,7 +3697,7 @@ namespace {
 			m_state = state_t::read_peer_id;
 
 #ifdef SIRIUS_DRIVE_MULTI
-            m_recv_buffer.reset(20+32); // 32 is the lenght of public key
+            m_recv_buffer.reset(20 + 32+32); // publicKey[32], downloadChannelId[32]
 #else
             m_recv_buffer.reset(20);
 #endif
@@ -3689,7 +3716,7 @@ namespace {
 				return;
 			}
 #ifdef SIRIUS_DRIVE_MULTI
-			TORRENT_ASSERT(m_recv_buffer.packet_size() == 20+32); // 32 is the lenght of public key
+			TORRENT_ASSERT(m_recv_buffer.packet_size() == 20 + 32+32); // pid[20], publicKey[32], downloadChannelId[32]
 #else
             TORRENT_ASSERT(m_recv_buffer.packet_size() == 20);
 #endif
@@ -3726,9 +3753,12 @@ namespace {
             // Save client public key for this peer connection
             std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
 
+            // Save download channel id
+            std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32+32, m_download_channel_id.data());
+
             // Get peer id (it is a random sequence)
             peer_id pid;
-            std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32 + 20, pid.data());
+            std::copy(recv_buffer.begin() + 32+32, recv_buffer.begin() + 32+32 + 20, pid.data());
 //            std::cerr << "<<<<<[read pid] '" << m_dbgOurPeerName << "' pid: " << pid << std::endl << std::flush;
 //            std::cerr << "<<<<<[rd pkey] '" << toString(m_peer_public_key) << std::endl << std::flush;
 
@@ -3997,6 +4027,10 @@ namespace {
 
 		if (amount_payload > 0)
 		{
+#ifdef SIRIUS_DRIVE_MULTI
+            //todo++
+            std::cerr << "&&&&&&&&>> " << amount_payload << std::endl << std::flush;
+#endif
 			std::shared_ptr<torrent> t = associated_torrent().lock();
 			TORRENT_ASSERT(t);
 			if (t) t->update_last_upload();

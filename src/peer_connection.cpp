@@ -5724,7 +5724,11 @@ namespace libtorrent {
 		return ret;
 	}
 
-	void peer_connection::setup_send()
+#ifdef SIRIUS_DRIVE_MULTI
+    void peer_connection::setup_send( std::optional<int> pieceSize )
+#else
+    void peer_connection::setup_send()
+#endif
 	{
 		TORRENT_ASSERT(is_single_thread());
 
@@ -5862,18 +5866,51 @@ namespace libtorrent {
 		m_socket_is_writing = true;
 #endif
 
-		using write_handler_type = aux::handler<
-			peer_connection
-			, decltype(&peer_connection::on_send_data)
-			, &peer_connection::on_send_data
-			, &peer_connection::on_error
-			, &peer_connection::on_exception
-			, decltype(m_write_handler_storage)
-			, &peer_connection::m_write_handler_storage
-			>;
-		static_assert(sizeof(write_handler_type) == sizeof(std::shared_ptr<peer_connection>)
-			, "write handler does not have the expected size");
-		m_socket.async_write_some(vec, write_handler_type(self()));
+#ifdef SIRIUS_DRIVE_MULTI
+        auto& s = boost::get<tcp::socket>(m_socket);
+        s.async_write_some( vec, [this,pieceSize=pieceSize] (error_code const& error, std::size_t const bytes_transferred )
+        {
+            if ( pieceSize )
+            {
+                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                delegate->onPieceSent( *pieceSize );
+            }
+            try
+            {
+                on_send_data( error, bytes_transferred );
+            }
+            catch (system_error const& e)
+            {
+                on_error(e.code());
+            }
+            catch (std::exception const& e)
+            {
+                on_exception(e);
+            }
+            catch (...)
+            {
+                // this is pretty bad
+                TORRENT_ASSERT(false);
+                std::runtime_error e("unknown exception");
+                on_exception(e);
+            }
+        });
+#else
+        using write_handler_type = aux::handler<
+            peer_connection
+            , decltype(&peer_connection::on_send_data)
+            , &peer_connection::on_send_data
+            , &peer_connection::on_error
+            , &peer_connection::on_exception
+            , decltype(m_write_handler_storage)
+            , &peer_connection::m_write_handler_storage
+            >;
+        static_assert(sizeof(write_handler_type) == sizeof(std::shared_ptr<peer_connection>)
+            , "write handler does not have the expected size");
+
+        m_socket.async_write_some(vec, write_handler_type(self()));
+#endif //#ifdef SIRIUS_DRIVE_MULTI
 
 		m_channel_state[upload_channel] |= peer_info::bw_network;
 		m_last_sent.set(m_connect, aux::time_now());

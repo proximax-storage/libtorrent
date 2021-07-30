@@ -513,6 +513,7 @@ namespace libtorrent {
 
 #ifdef SIRIUS_DRIVE_MULTI
         std::array<uint8_t,32> m_peer_public_key;
+        std::array<uint8_t,32> m_download_channel_id;
         const char* m_dbgOurPeerName = "unset";
 #endif
 	};

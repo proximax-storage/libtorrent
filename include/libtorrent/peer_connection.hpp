@@ -659,7 +659,12 @@ namespace aux {
 		virtual piece_block_progress downloading_piece_progress() const;
 
 		void send_buffer(span<char const> buf);
-		void setup_send();
+
+#ifdef SIRIUS_DRIVE_MULTI
+        void setup_send( std::optional<int> pieceSize = {} );
+#else
+        void setup_send();
+#endif
 
 		template <typename Holder>
 		void append_send_buffer(Holder buffer, int size)
