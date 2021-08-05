@@ -660,18 +660,23 @@ namespace aux {
 
 		void send_buffer(span<char const> buf);
 
-#ifdef SIRIUS_DRIVE_MULTI
-        void setup_send( std::optional<int> pieceSize = {} );
-#else
         void setup_send();
-#endif
 
+#ifdef SIRIUS_DRIVE_MULTI
+        template <typename Holder>
+        void append_send_buffer(Holder buffer, int size, int payload = 0)
+        {
+            TORRENT_ASSERT(is_single_thread());
+            m_send_buffer.append_buffer(std::move(buffer), size, payload);
+        }
+#else
 		template <typename Holder>
 		void append_send_buffer(Holder buffer, int size)
 		{
 			TORRENT_ASSERT(is_single_thread());
 			m_send_buffer.append_buffer(std::move(buffer), size);
 		}
+#endif
 
 		int outstanding_bytes() const { return m_outstanding_bytes; }
 
@@ -1217,6 +1222,14 @@ namespace aux {
 		bool m_socket_is_writing = false;
 		bool is_single_thread() const;
 #endif
+
+#ifdef SIRIUS_DRIVE_MULTI
+    protected:
+        std::array<uint8_t,32> m_peer_public_key;
+        std::array<uint8_t,32> m_download_channel_id;
+        const char* m_dbgOurPeerName = "unset";
+#endif
+
 	};
 
 	struct cork

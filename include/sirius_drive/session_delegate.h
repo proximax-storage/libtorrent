@@ -25,11 +25,21 @@ class session_delegate {
         // Replicator behavior differs from client
         virtual bool isClient() const = 0;
 
+        virtual void onHandshake( uint64_t uploadedSize )
+        {
+        }
+
+        virtual uint8_t getUploadedSize( const std::array<uint8_t,32>& downloadChannelId )
+        {
+            // Now client does not calculate uploaded size (but not replivcator)
+            return 0;
+        }
+
         // It will be called on 'replicator' side,
         // when 'downloader' requests piece
-        virtual bool checkDownloadLimit( std::vector<uint8_t> reciept,
-                                         sha256_hash downloadChannelId,
-                                         size_t downloadedSize )
+        virtual bool checkDownloadLimit( const std::array<uint8_t,64>& signature,
+                                         const std::array<uint8_t,32>& downloadChannelId,
+                                        uint64_t downloadedSize )
         {
             // 'client' always returns 'true'
             return true;
@@ -38,17 +48,17 @@ class session_delegate {
         // It will be called,
         // when a piece is received,
         // for accumulating downloaded data size
-        virtual void onPieceReceived( size_t pieceSize )
+        virtual void onPieceReceived( uint64_t pieceSize )
         {
-            // now replicator does nothing in this case
+            // now 'replicator' does nothing in this case
         }
 
         // It will be called,
         // when a piece is sent,
         // for accumulating sent data size
-        virtual void onPieceSent( size_t pieceSize )
+        virtual void onPieceSent( const std::array<uint8_t,32>& downloadChannelId, uint64_t pieceSize )
         {
-            // now client does nothing in this case
+            // now 'client' does nothing in this case
         }
 
         // It will be called to sign random sequence (for handshake)

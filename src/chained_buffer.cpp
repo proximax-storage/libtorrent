@@ -52,6 +52,10 @@ namespace aux {
 				b.buf += bytes_to_pop;
 				b.used_size -= bytes_to_pop;
 				b.size -= bytes_to_pop;
+#ifdef SIRIUS_DRIVE_MULTI
+                if ( b.payload > 0 )
+                    b.payload -= bytes_to_pop;
+#endif
 				m_capacity -= bytes_to_pop;
 				m_bytes -= bytes_to_pop;
 				TORRENT_ASSERT(m_bytes <= m_capacity);
@@ -70,6 +74,26 @@ namespace aux {
 			m_vec.pop_front();
 		}
 	}
+
+#ifdef SIRIUS_DRIVE_MULTI
+    int chained_buffer::getSentPayload( int bytes_transferred )
+    {
+        int payload = 0;
+        for( auto it = m_vec.begin(); it != m_vec.end(); it++ )
+        {
+            if ( bytes_transferred < it->used_size )
+            {
+                if ( it->payload > 0 )
+                    payload += bytes_transferred;
+                break;
+            }
+            payload += it->payload;
+            bytes_transferred -= it->used_size;
+        }
+        return payload;
+    }
+#endif
+
 
 	// returns the number of bytes available at the
 	// end of the last chained buffer.

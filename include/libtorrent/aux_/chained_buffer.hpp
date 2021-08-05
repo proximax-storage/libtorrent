@@ -117,6 +117,9 @@ namespace aux {
 			char* buf = nullptr; // the first byte of the buffer
 			int size = 0; // the total size of the buffer
 			int used_size = 0; // this is the number of bytes to send/receive
+#ifdef SIRIUS_DRIVE_MULTI
+            int payload = 0;
+#endif
 		};
 
 	public:
@@ -128,13 +131,16 @@ namespace aux {
 		void pop_front(int bytes_to_pop);
 
 		template <typename Holder>
-		void append_buffer(Holder buffer, int used_size)
+		void append_buffer(Holder buffer, int used_size, int payload = 0)
 		{
 			TORRENT_ASSERT(is_single_thread());
 			TORRENT_ASSERT(int(buffer.size()) >= used_size);
 			m_vec.emplace_back();
 			buffer_t& b = m_vec.back();
 			init_buffer_entry<Holder>(b, std::move(buffer), used_size);
+#ifdef SIRIUS_DRIVE_MULTI
+            b.payload = payload;
+#endif
 		}
 
 		template <typename Holder>
@@ -162,6 +168,10 @@ namespace aux {
 		char* allocate_appendix(int s);
 
 		span<boost::asio::const_buffer const> build_iovec(int to_send);
+
+#ifdef SIRIUS_DRIVE_MULTI
+        int getSentPayload( int bytes_transferred );
+#endif
 
 		void clear();
 

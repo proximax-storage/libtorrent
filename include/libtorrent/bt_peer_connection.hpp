@@ -344,6 +344,25 @@ namespace libtorrent {
 		// these functions encrypt the send buffer if m_rc4_encrypted
 		// is true, otherwise it passes the call to the
 		// peer_connection functions of the same names
+#ifdef SIRIUS_DRIVE
+        template <typename Holder>
+        void append_const_send_buffer(Holder holder, int size, int payload = 0)
+        {
+#if !defined TORRENT_DISABLE_ENCRYPTION
+            if (!m_enc_handler.is_send_plaintext())
+            {
+                // if we're encrypting this buffer, we need to make a copy
+                // since we'll mutate it
+                aux::buffer buf(size, {holder.data(), size});
+                append_send_buffer(std::move(buf), size, payload);
+            }
+            else
+#endif
+            {
+                append_send_buffer(std::move(holder), size, payload);
+            }
+        }
+#else
 		template <typename Holder>
 		void append_const_send_buffer(Holder holder, int size)
 		{
@@ -361,7 +380,7 @@ namespace libtorrent {
 				append_send_buffer(std::move(holder), size);
 			}
 		}
-
+#endif // SIRIUS_DRIVE
 	private:
 
 		enum class state_t : std::uint8_t
@@ -510,12 +529,6 @@ namespace libtorrent {
 #endif
 
 		std::array<char, 8> m_reserved_bits;
-
-#ifdef SIRIUS_DRIVE_MULTI
-        std::array<uint8_t,32> m_peer_public_key;
-        std::array<uint8_t,32> m_download_channel_id;
-        const char* m_dbgOurPeerName = "unset";
-#endif
 	};
 }
 
