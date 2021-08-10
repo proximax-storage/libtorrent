@@ -22,15 +22,10 @@ if (SIRIUS_DRIVE)
 	add_definitions(-DSIRIUS_DRIVE)
 endif()
 
-# option(SIRIUS_DRIVE_MULTI "changes for sirius drive-multi" ON)
-# if (SIRIUS_DRIVE_MULTI)
-# 	add_definitions(-DSIRIUS_DRIVE_MULTI)
-# endif()
-
-# option(SIRIUS_DRIVE_USE_TCP "changes for sirius with using TCP instead of uTP" ON)
-# if (SIRIUS_DRIVE_USE_TCP)
-# 	add_definitions(-DSIRIUS_DRIVE_USE_TCP)
-# endif()
+ option(SIRIUS_DRIVE_MULTI "changes for sirius drive-multi" ON)
+ if (SIRIUS_DRIVE_MULTI)
+ 	add_definitions(-DSIRIUS_DRIVE_MULTI)
+ endif()
 
 set(libtorrent_include_files
 	add_torrent_params

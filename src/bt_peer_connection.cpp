@@ -1117,6 +1117,11 @@ namespace {
                     //todo++ ignore?
                 }
 
+                delegate->notifyOtherReplicators(   m_download_channel_id,
+                                                    m_peer_public_key,      // client public key
+                                                    downloadedSize,
+                                                    signature );
+
                 // check receipt limit
                 if ( !delegate->checkDownloadLimit( signature, m_download_channel_id, downloadedSize ) )
                 {

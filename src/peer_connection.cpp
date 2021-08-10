@@ -5863,6 +5863,7 @@ namespace libtorrent {
 #endif
 
 #ifdef SIRIUS_DRIVE_MULTI
+#pragma mark --payload--
 		// only if TCP sockets
 		if ( m_socket.which() == 0 )
         {

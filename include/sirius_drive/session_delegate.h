@@ -37,12 +37,21 @@ class session_delegate {
 
         // It will be called on 'replicator' side,
         // when 'downloader' requests piece
-        virtual bool checkDownloadLimit( const std::array<uint8_t,64>& signature,
-                                         const std::array<uint8_t,32>& downloadChannelId,
-                                        uint64_t downloadedSize )
+        virtual bool checkDownloadLimit( const std::array<uint8_t,64>&  signature,
+                                         const std::array<uint8_t,32>&  downloadChannelId,
+                                         uint64_t                       downloadedSize )
         {
             // 'client' always returns 'true'
             return true;
+        }
+
+        virtual void notifyOtherReplicators( const std::array<uint8_t,32>&  downloadChannelId,
+                                             const std::array<uint8_t,32>&  clientPublicKey,
+                                             uint64_t                       downloadedSize,
+                                             const std::array<uint8_t,64>&  signature )
+        {
+            // 'client' does notify anyone
+            return;
         }
 
         // It will be called,
