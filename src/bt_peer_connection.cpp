@@ -1112,15 +1112,20 @@ namespace {
             // only replicators
             if ( !delegate->isClient() )
             {
-                if ( !delegate->verify( m_peer_public_key, downloadedSize, signature ) )
+                if ( !delegate->verifyReceipt( m_download_channel_id,
+                                               m_peer_public_key,       // client public key
+                                               delegate->publicKey(),   // replicator public key
+                                               downloadedSize, signature ) )
                 {
-                    //todo++ ignore?
+                    //todo++ ignore piece request?
+                    std::cerr << "ERROR! Invalid receipt" << std::endl << std::flush;
+                    //assert(0);
                 }
 
-                delegate->notifyOtherReplicators(   m_download_channel_id,
-                                                    m_peer_public_key,      // client public key
-                                                    downloadedSize,
-                                                    signature );
+                delegate->sendReceiptToOtherReplicators( m_download_channel_id,
+                                                         m_peer_public_key,      // client public key
+                                                         downloadedSize,
+                                                         signature );
 
                 // check receipt limit
                 if ( !delegate->checkDownloadLimit( signature, m_download_channel_id, downloadedSize ) )
@@ -2215,7 +2220,7 @@ namespace {
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
 
-            if ( !delegate->verify( reinterpret_cast<const uint8_t*>(pid().data()), pid().size(),
+            if ( !delegate->verifyHandshake( reinterpret_cast<const uint8_t*>(pid().data()), pid().size(),
                                     m_peer_public_key,
                                     signature ) )
             {
@@ -2435,9 +2440,10 @@ namespace {
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-            delegate->sign( m_peer_public_key, // replicator public key
-                            downloadedSize,
-                            signature );
+            delegate->signReceipt( m_download_channel_id,
+                                   m_peer_public_key, // replicator public key
+                                   downloadedSize,
+                                   signature );
 
             auto local_endpoint = this->local_endpoint();
             this->remote();
@@ -2702,14 +2708,16 @@ namespace {
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
 
             std::array<uint8_t,64> signature;
-            delegate->sign( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()), m_our_peer_id.size(), signature );
+            delegate->signHandshake( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()),
+                                   m_our_peer_id.size(),
+                                   signature );
 
 //            std::cerr << ">>>> sign by '" << m_dbgOurPeerName << "'" << std::endl << std::flush;
 //            std::cerr << ">>>> key: "       << toString(delegate->publicKey()) << std::endl;
 //            std::cerr << ">>>> our: "       << m_our_peer_id << std::endl << std::flush;
 //            std::cerr << ">>>> signature: " << toString(signature) <<  std::endl << std::endl << std::flush;
 
-            if ( !delegate->verify( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()), m_our_peer_id.size(),
+            if ( !delegate->verifyHandshake( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()), m_our_peer_id.size(),
                                     delegate->publicKey(),
                                     signature ) )
             {
