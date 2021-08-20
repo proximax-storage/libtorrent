@@ -45,13 +45,26 @@ class session_delegate {
             return true;
         }
 
-        virtual void notifyOtherReplicators( const std::array<uint8_t,32>&  downloadChannelId,
-                                             const std::array<uint8_t,32>&  clientPublicKey,
-                                             uint64_t                       downloadedSize,
-                                             const std::array<uint8_t,64>&  signature )
+        // will be called from Sesion (that is libtorrent pugin)
+        // when it receives message from another replicator
+        // (must be implemented by DownloadLimiter)
+        virtual void acceptReceiptFromAnotherReplicator( const std::array<uint8_t,32>&  downloadChannelId,
+                                                         const std::array<uint8_t,32>&  clientPublicKey,
+                                                         uint64_t                       downloadedSize,
+                                                         const std::array<uint8_t,64>&  signature )
         {
-            // 'client' does notify anyone
+            // 'client' does nothing
             return;
+        }
+
+        // will be called by libtorrent pugin when replicator receives receipt
+        // (must be implemented by DefaultReplicator)
+        virtual void sendReceiptToOtherReplicators( const std::array<uint8_t,32>&  downloadChannelId,
+                                                    const std::array<uint8_t,32>&  clientPublicKey,
+                                                    uint64_t                       downloadedSize,
+                                                    const std::array<uint8_t,64>&  signature )
+        {
+            // 'client' ignores this call
         }
 
         // It will be called,
@@ -71,27 +84,40 @@ class session_delegate {
         }
 
         // It will be called to sign random sequence (for handshake)
-        virtual void sign( const uint8_t* bytes, size_t size,
-                           std::array<uint8_t,64>& outSignature ) = 0;
+        virtual void signHandshake( const uint8_t*              bytes,
+                                    size_t                      size,
+                                    std::array<uint8_t,64>&     outSignature ) = 0;
 
         // It will be called to verify handshake
-        virtual bool verify( const uint8_t* bytes, size_t size,
-                             const std::array<uint8_t,32>& publicKey,
-                             const std::array<uint8_t,64>& signature ) = 0;
+        virtual bool verifyHandshake( const uint8_t*                 bytes,
+                                      size_t                         size,
+                                      const std::array<uint8_t,32>&  publicKey,
+                                      const std::array<uint8_t,64>&  signature ) = 0;
 
         // It will be called to sign receipt
-        virtual void sign( const std::array<uint8_t,32>& replicatorPublicKey,
-                          uint64_t&                      outDownloadedSize,
-                          std::array<uint8_t,64>&        outSignature ) = 0;
+        // (must be implemented by ClientSession)
+        virtual void signReceipt( const std::array<uint8_t,32>& downloadChannelId,
+                                  //                            clientPublicKey,        //it is accesible from ClientSession
+                                  const std::array<uint8_t,32>& replicatorPublicKey,
+                                  uint64_t&                     downloadedSize,
+                                  std::array<uint8_t,64>&       outSignature ) = 0;
 
         // It will be called to verify receipt
-        virtual bool verify( const std::array<uint8_t,32>&  clientPublicKey,
-                             uint64_t                       downloadedSize,
-                             const std::array<uint8_t,64>&  signature ) = 0;
+        // (must be implemented by DownloadLimiter)
+        virtual bool verifyReceipt( const std::array<uint8_t,32>&  downloadChannelId,
+                                    const std::array<uint8_t,32>&  clientPublicKey,
+                                    const std::array<uint8_t,32>&  replicatorPublicKey,
+                                    uint64_t                       downloadedSize,
+                                    const std::array<uint8_t,64>&  signature )
+        {
+            // now 'client' does nothing in this case
+            return true;
+        }
 
+        // Replicator/Client public key
         virtual const std::array<uint8_t,32>& publicKey() = 0;
 
-        // It will be called when 'client' connects to 'replicator' (handshake)
+        // It will be called when 'client' connects to 'replicator' (in handshake)
         virtual const std::optional<std::array<uint8_t,32>> downloadChannelId() = 0;
 
         // It will be called when 'replicator' answers to 'client' (extended handshake)
@@ -103,7 +129,7 @@ class session_delegate {
 
         // They will be called when 'client' requests a piece from 'replicator' (handshake)
         virtual uint64_t downloadedSize() = 0;
-        virtual uint64_t requestedSize() = 0;
+        virtual uint64_t requestedSize()  = 0;
 
 
         virtual const char* dbgOurPeerName() = 0;
