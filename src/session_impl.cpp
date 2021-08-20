@@ -733,9 +733,6 @@ bool ssl_server_name_callback(ssl::stream_handle_type stream_handle, std::string
 		session_log(" done starting session");
 #endif
 
-		// this applies unchoke settings from m_settings
-		recalculate_unchoke_slots();
-
 		// apply all m_settings to this session
 		run_all_updates(*this);
 		reopen_listen_sockets(false);
@@ -3620,7 +3617,6 @@ namespace {
 		if (m_unchoke_time_scaler <= 0 && !m_connections.empty())
 		{
 			m_unchoke_time_scaler = settings().get_int(settings_pack::unchoke_interval);
-			recalculate_unchoke_slots();
 		}
 
 		// --------------------------------------------------------------
@@ -3631,7 +3627,6 @@ namespace {
 		{
 			m_optimistic_unchoke_time_scaler
 				= settings().get_int(settings_pack::optimistic_unchoke_interval);
-			recalculate_optimistic_unchoke_slots();
 		}
 
 		// --------------------------------------------------------------
@@ -4067,147 +4062,6 @@ namespace {
 		};
 	}
 
-	void session_impl::recalculate_optimistic_unchoke_slots()
-	{
-		INVARIANT_CHECK;
-
-		TORRENT_ASSERT(is_single_thread());
-		if (m_stats_counters[counters::num_unchoke_slots] == 0) return;
-
-		// if we unchoke everyone, skip this logic
-		if (settings().get_int(settings_pack::choking_algorithm) == settings_pack::fixed_slots_choker
-			&& settings().get_int(settings_pack::unchoke_slots_limit) < 0)
-			return;
-
-		std::vector<opt_unchoke_candidate> opt_unchoke;
-
-		// collect the currently optimistically unchoked peers here, so we can
-		// choke them when we've found new optimistic unchoke candidates.
-		std::vector<torrent_peer*> prev_opt_unchoke;
-
-		// TODO: 3 it would probably make sense to have a separate list of peers
-		// that are eligible for optimistic unchoke, similar to the torrents
-		// perhaps this could even iterate over the pool allocators of
-		// torrent_peer objects. It could probably be done in a single pass and
-		// collect the n best candidates. maybe just a queue of peers would make
-		// even more sense, just pick the next peer in the queue for unchoking. It
-		// would be O(1).
-		for (auto& i : m_connections)
-		{
-			peer_connection* const p = i.get();
-			TORRENT_ASSERT(p);
-			torrent_peer* pi = p->peer_info_struct();
-			if (!pi) continue;
-			if (pi->web_seed) continue;
-
-			if (pi->optimistically_unchoked)
-			{
-				prev_opt_unchoke.push_back(pi);
-			}
-
-			torrent const* t = p->associated_torrent().lock().get();
-			if (!t) continue;
-
-			// TODO: 3 peers should know whether their torrent is paused or not,
-			// instead of having to ask it over and over again
-			if (t->is_paused()) continue;
-
-			if (!p->is_connecting()
-				&& !p->is_disconnecting()
-				&& p->is_peer_interested()
-				&& t->free_upload_slots()
-				&& (p->is_choked() || pi->optimistically_unchoked)
-				&& !p->ignore_unchoke_slots()
-				&& t->valid_metadata())
-			{
-				opt_unchoke.emplace_back(&i);
-			}
-		}
-
-		// find the peers that has been waiting the longest to be optimistically
-		// unchoked
-
-		int num_opt_unchoke = m_settings.get_int(settings_pack::num_optimistic_unchoke_slots);
-		int const allowed_unchoke_slots = int(m_stats_counters[counters::num_unchoke_slots]);
-		if (num_opt_unchoke == 0) num_opt_unchoke = std::max(1, allowed_unchoke_slots / 5);
-		if (num_opt_unchoke > int(opt_unchoke.size())) num_opt_unchoke =
-			int(opt_unchoke.size());
-
-		// find the n best optimistic unchoke candidates
-		std::partial_sort(opt_unchoke.begin()
-			, opt_unchoke.begin() + num_opt_unchoke
-			, opt_unchoke.end()
-#ifndef TORRENT_DISABLE_EXTENSIONS
-			, last_optimistic_unchoke_cmp(m_ses_extensions[plugins_optimistic_unchoke_idx])
-#else
-			, last_optimistic_unchoke_cmp()
-#endif
-			);
-
-		// unchoke the first num_opt_unchoke peers in the candidate set
-		// and make sure that the others are choked
-		auto opt_unchoke_end = opt_unchoke.begin()
-			+ num_opt_unchoke;
-
-		for (auto i = opt_unchoke.begin(); i != opt_unchoke_end; ++i)
-		{
-			torrent_peer* pi = (*i->peer)->peer_info_struct();
-			auto* const p = static_cast<peer_connection*>(pi->connection);
-			if (pi->optimistically_unchoked)
-			{
-#ifndef TORRENT_DISABLE_LOGGING
-					p->peer_log(peer_log_alert::info, "OPTIMISTIC UNCHOKE"
-						, "already unchoked | session-time: %d"
-						, pi->last_optimistically_unchoked);
-#endif
-				TORRENT_ASSERT(!pi->connection->is_choked());
-				// remove this peer from prev_opt_unchoke, to prevent us from
-				// choking it later. This peer gets another round of optimistic
-				// unchoke
-				auto const existing =
-					std::find(prev_opt_unchoke.begin(), prev_opt_unchoke.end(), pi);
-				TORRENT_ASSERT(existing != prev_opt_unchoke.end());
-				prev_opt_unchoke.erase(existing);
-			}
-			else
-			{
-				TORRENT_ASSERT(p->is_choked());
-				std::shared_ptr<torrent> t = p->associated_torrent().lock();
-				bool ret = t->unchoke_peer(*p, true);
-				TORRENT_ASSERT(ret);
-				if (ret)
-				{
-					pi->optimistically_unchoked = true;
-					m_stats_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic);
-					pi->last_optimistically_unchoked = std::uint16_t(session_time());
-#ifndef TORRENT_DISABLE_LOGGING
-					p->peer_log(peer_log_alert::info, "OPTIMISTIC UNCHOKE"
-						, "session-time: %d", pi->last_optimistically_unchoked);
-#endif
-				}
-			}
-		}
-
-		// now, choke all the previous optimistically unchoked peers
-		for (torrent_peer* pi : prev_opt_unchoke)
-		{
-			TORRENT_ASSERT(pi->optimistically_unchoked);
-			auto* const p = static_cast<peer_connection*>(pi->connection);
-			std::shared_ptr<torrent> t = p->associated_torrent().lock();
-			pi->optimistically_unchoked = false;
-			m_stats_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic, -1);
-			t->choke_peer(*p);
-		}
-
-		// if we have too many unchoked peers now, we need to trigger the regular
-		// choking logic to choke some
-		if (m_stats_counters[counters::num_unchoke_slots]
-			< m_stats_counters[counters::num_peers_up_unchoked_all])
-		{
-			m_unchoke_time_scaler = 0;
-		}
-	}
-
 	void session_impl::try_connect_more_peers()
 	{
 		if (m_abort) return;
@@ -4333,148 +4187,6 @@ namespace {
 			if (steps_since_last_connect > num_torrents + 1) break;
 			// maintain the global limit on number of connections
 			if (num_connections() >= m_settings.get_int(settings_pack::connections_limit)) break;
-		}
-	}
-
-	void session_impl::recalculate_unchoke_slots()
-	{
-		TORRENT_ASSERT(is_single_thread());
-
-		time_point const now = aux::time_now();
-		time_duration const unchoke_interval = now - m_last_choke;
-		m_last_choke = now;
-
-		// if we unchoke everyone, skip this logic
-		if (settings().get_int(settings_pack::choking_algorithm) == settings_pack::fixed_slots_choker
-			&& settings().get_int(settings_pack::unchoke_slots_limit) < 0)
-		{
-			m_stats_counters.set_value(counters::num_unchoke_slots, std::numeric_limits<int>::max());
-			return;
-		}
-
-		// build list of all peers that are
-		// unchokable.
-		// TODO: 3 there should be a pre-calculated list of all peers eligible for
-		// unchoking
-		std::vector<peer_connection*> peers;
-		for (auto i = m_connections.begin(); i != m_connections.end();)
-		{
-			std::shared_ptr<peer_connection> p = *i;
-			TORRENT_ASSERT(p);
-			++i;
-			torrent* const t = p->associated_torrent().lock().get();
-			torrent_peer* const pi = p->peer_info_struct();
-
-			if (p->ignore_unchoke_slots() || t == nullptr || pi == nullptr
-				|| pi->web_seed || t->is_paused())
-			{
-				p->reset_choke_counters();
-				continue;
-			}
-
-			if (!p->is_peer_interested()
-				|| p->is_disconnecting()
-				|| p->is_connecting())
-			{
-				// this peer is not unchokable. So, if it's unchoked
-				// already, make sure to choke it.
-				if (p->is_choked())
-				{
-					p->reset_choke_counters();
-					continue;
-				}
-				if (pi && pi->optimistically_unchoked)
-				{
-					m_stats_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic, -1);
-					pi->optimistically_unchoked = false;
-					// force a new optimistic unchoke
-					m_optimistic_unchoke_time_scaler = 0;
-					// TODO: post a message to have this happen
-					// immediately instead of waiting for the next tick
-				}
-				t->choke_peer(*p);
-				p->reset_choke_counters();
-				continue;
-			}
-
-			peers.push_back(p.get());
-		}
-
-		int const allowed_upload_slots = unchoke_sort(peers
-			, unchoke_interval, m_settings);
-
-		if (m_settings.get_int(settings_pack::choking_algorithm) == settings_pack::fixed_slots_choker)
-		{
-			int const upload_slots = get_int_setting(settings_pack::unchoke_slots_limit);
-			m_stats_counters.set_value(counters::num_unchoke_slots, upload_slots);
-		}
-		else
-		{
-			m_stats_counters.set_value(counters::num_unchoke_slots
-				, allowed_upload_slots);
-		}
-
-#ifndef TORRENT_DISABLE_LOGGING
-		if (should_log())
-		{
-			session_log("RECALCULATE UNCHOKE SLOTS: [ peers: %d "
-				"eligible-peers: %d"
-				" allowed-slots: %d ]"
-				, int(m_connections.size())
-				, int(peers.size())
-				, allowed_upload_slots);
-		}
-#endif
-
-		int const unchoked_counter_optimistic
-			= int(m_stats_counters[counters::num_peers_up_unchoked_optimistic]);
-		int const num_opt_unchoke = (unchoked_counter_optimistic == 0)
-			? std::max(1, allowed_upload_slots / 5) : unchoked_counter_optimistic;
-
-		int unchoke_set_size = allowed_upload_slots - num_opt_unchoke;
-
-		// go through all the peers and unchoke the first ones and choke
-		// all the other ones.
-		for (auto p : peers)
-		{
-			TORRENT_ASSERT(p != nullptr);
-			TORRENT_ASSERT(!p->ignore_unchoke_slots());
-
-			// this will update the m_uploaded_at_last_unchoke
-			p->reset_choke_counters();
-
-			torrent* t = p->associated_torrent().lock().get();
-			TORRENT_ASSERT(t);
-
-			if (unchoke_set_size > 0)
-			{
-				// yes, this peer should be unchoked
-				if (p->is_choked())
-				{
-					if (!t->unchoke_peer(*p))
-						continue;
-				}
-
-				--unchoke_set_size;
-
-				TORRENT_ASSERT(p->peer_info_struct());
-				if (p->peer_info_struct()->optimistically_unchoked)
-				{
-					// force a new optimistic unchoke
-					// since this one just got promoted into the
-					// proper unchoke set
-					m_optimistic_unchoke_time_scaler = 0;
-					p->peer_info_struct()->optimistically_unchoked = false;
-					m_stats_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic, -1);
-				}
-			}
-			else
-			{
-				// no, this peer should be choked
-				TORRENT_ASSERT(p->peer_info_struct());
-				if (!p->is_choked() && !p->peer_info_struct()->optimistically_unchoked)
-					t->choke_peer(*p);
-			}
 		}
 	}
 
