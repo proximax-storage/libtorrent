@@ -3890,7 +3890,6 @@ namespace {
 					// if the peer is ignoring unchoke slots, or if we have enough
 					// unused slots, unchoke this peer right away, to save a round-trip
 					// in case it's interested.
-					maybe_unchoke_this_peer();
 				}
 			}
 

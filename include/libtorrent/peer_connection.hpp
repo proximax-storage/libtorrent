@@ -196,8 +196,8 @@ namespace aux {
 			, m_connecting(!m_torrent.expired())
 			, m_endgame_mode(false)
 			, m_snubbed(false)
-			, m_interesting(false)
-			, m_choked(true)
+			, m_interesting(true)
+			, m_choked(false)
 			, m_ignore_stats(false)
 		{}
 

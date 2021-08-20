@@ -156,9 +156,9 @@ namespace libtorrent {
 		, m_bitfield_received(false)
 		, m_no_download(false)
 		, m_holepunch_mode(false)
-		, m_peer_choked(true)
+		, m_peer_choked(false)
 		, m_have_all(false)
-		, m_peer_interested(false)
+		, m_peer_interested(true)
 		, m_need_interest_update(false)
 		, m_has_metadata(true)
 		, m_exceeded_limit(false)
@@ -549,8 +549,7 @@ namespace libtorrent {
 			peer_log(peer_log_alert::info, "UPDATE_INTEREST", "not interesting");
 #endif
 
-		if (!interested) send_not_interested();
-		else t->peer_is_interesting(*this);
+		if (interested) t->peer_is_interesting(*this);
 
 		TORRENT_ASSERT(in_handshake() || is_interesting() == interested);
 
@@ -802,8 +801,8 @@ namespace libtorrent {
 			if (t && t->has_picker())
 				t->picker().check_peer_invariant(m_have_piece, peer_info_struct());
 #endif
-			if (t->is_upload_only()) send_not_interested();
-			else t->peer_is_interesting(*this);
+			if (!t->is_upload_only()) t->peer_is_interesting(*this);
+
 			disconnect_if_redundant();
 			return;
 		}
@@ -825,11 +824,6 @@ namespace libtorrent {
 					interesting = true;
 			}
 			if (interesting) t->peer_is_interesting(*this);
-			else send_not_interested();
-		}
-		else
-		{
-			update_interest();
 		}
 	}
 
@@ -997,7 +991,6 @@ namespace libtorrent {
 			// it might have been the last interesting
 			// piece this peer had. We might not be
 			// interested anymore
-			update_interest();
 			if (is_disconnecting()) return;
 		}
 
@@ -1814,8 +1807,6 @@ namespace libtorrent {
 			write_unchoke();
 			return;
 		}
-
-		maybe_unchoke_this_peer();
 	}
 
 	void peer_connection::maybe_unchoke_this_peer()
@@ -1879,11 +1870,6 @@ namespace libtorrent {
 		}
 
 		if (is_disconnecting()) return;
-
-		std::shared_ptr<torrent> t = m_torrent.lock();
-		TORRENT_ASSERT(t);
-
-		choke_this_peer();
 	}
 
 	void peer_connection::choke_this_peer()
@@ -1906,7 +1892,6 @@ namespace libtorrent {
 			t->trigger_optimistic_unchoke();
 		}
 		t->choke_peer(*this);
-		t->trigger_unchoke();
 	}
 
 	// -----------------------------
@@ -2281,8 +2266,6 @@ namespace libtorrent {
 
 		m_have_piece = bits;
 		m_num_pieces = num_pieces;
-
-		update_interest();
 	}
 
 	bool peer_connection::disconnect_if_redundant()
@@ -3376,8 +3359,7 @@ namespace libtorrent {
 		TORRENT_ASSERT(m_have_piece.size() == t->torrent_file().num_pieces());
 
 		// if we're finished, we're not interested
-		if (t->is_upload_only()) send_not_interested();
-		else t->peer_is_interesting(*this);
+		if (!t->is_upload_only()) t->peer_is_interesting(*this);
 
 		disconnect_if_redundant();
 	}
@@ -3420,9 +3402,6 @@ namespace libtorrent {
 
 		// if the peer is ready to download stuff, it must have metadata
 		m_has_metadata = true;
-
-		// we're never interested in a peer that doesn't have anything
-		send_not_interested();
 
 		TORRENT_ASSERT(!m_have_piece.empty() || !t->ready_for_connections());
 		disconnect_if_redundant();
@@ -3787,12 +3766,6 @@ namespace libtorrent {
 			TORRENT_ASSERT(m_peer_info == nullptr
 				|| m_peer_info->optimistically_unchoked == false);
 			return false;
-		}
-
-		if (m_peer_info && m_peer_info->optimistically_unchoked)
-		{
-			m_peer_info->optimistically_unchoked = false;
-			m_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic, -1);
 		}
 
 		m_suggest_pieces.clear();
