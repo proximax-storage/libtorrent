@@ -8,6 +8,8 @@
 #include "libtorrent/sha1_hash.hpp"
 #include <libtorrent/kademlia/ed25519.hpp>
 
+#include <optional>
+
 namespace libtorrent {
 
 struct RawBuffer
