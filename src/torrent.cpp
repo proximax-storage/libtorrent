@@ -823,7 +823,10 @@ bool is_downloading_state(int const st)
 		{
 			TORRENT_INCREMENT(m_iterating_connections);
 
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 			p->send_not_interested();
+#endif
+
 			p->send_upload_only(upload_only_enabled);
 		}
 #endif // TORRENT_DISABLE_EXTENSIONS
@@ -959,8 +962,12 @@ bool is_downloading_state(int const st)
 			{
 				TORRENT_INCREMENT(m_iterating_connections);
 				// we may want to disconnect other upload-only peers
-				if (p->upload_only())
-					p->update_interest();
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+                if (p->upload_only())
+                    p->update_interest();
+#endif
+
 				p->cancel_all_requests();
 			}
 			// this is used to try leaving upload only mode periodically
@@ -979,7 +986,11 @@ bool is_downloading_state(int const st)
 			{
 				TORRENT_INCREMENT(m_iterating_connections);
 				// we may be interested now, or no longer interested
-				p->update_interest();
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+                p->update_interest();
+#endif
+
 				p->send_block_requests();
 			}
 		}
@@ -1115,7 +1126,11 @@ bool is_downloading_state(int const st)
 			// already are interested. Gaining a piece may
 			// only make uninteresting peers interesting again.
 			if (p->is_interesting()) continue;
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 			p->update_interest();
+#endif
+
 			if (!m_abort)
 			{
 				if (request_a_block(*this, *p))
@@ -4073,7 +4088,10 @@ namespace {
 			// if the peer doesn't have the piece we just got, it
 			// shouldn't affect our interest
 			if (!p->has_piece(index)) continue;
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 			p->update_interest();
+#endif
 		}
 
 		set_need_save_resume();
@@ -4554,7 +4572,11 @@ namespace {
 		TORRENT_ASSERT(!is_finished());
 
 		if (c.in_handshake()) return;
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 		c.send_interested();
+#endif
+
 		if (c.has_peer_choked()
 			&& c.allowed_fast().empty())
 			return;
@@ -5597,7 +5619,10 @@ namespace {
 			// update_interest may disconnect the peer and
 			// invalidate the iterator
 			++i;
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 			p->update_interest();
+#endif
 		}
 
 		if (!is_downloading_state(m_state))
@@ -5768,9 +5793,14 @@ namespace {
 	{
 		INVARIANT_CHECK;
 
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
+
 		TORRENT_ASSERT(!c.is_choked());
 		TORRENT_ASSERT(!c.ignore_unchoke_slots());
 		TORRENT_ASSERT(m_num_uploads > 0);
+
+#endif
+
 		if (!c.send_choke()) return false;
 		--m_num_uploads;
 		state_updated();
@@ -5783,11 +5813,19 @@ namespace {
 
 		TORRENT_ASSERT(!m_graceful_pause_mode);
 		TORRENT_ASSERT(c.is_choked());
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
 		TORRENT_ASSERT(!c.ignore_unchoke_slots());
+#endif
+
 		// when we're unchoking the optimistic slots, we might
 		// exceed the limit temporarily while we're iterating
 		// over the peers
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
 		if (m_num_uploads >= m_max_uploads && !optimistic) return false;
+#endif
+
 		if (!c.send_unchoke()) return false;
 		++m_num_uploads;
 		state_updated();
@@ -9366,7 +9404,11 @@ namespace {
 					// remove any un-sent requests from the queue
 					p->clear_request_queue();
 					// don't accept new requests from the peer
-					p->choke_this_peer();
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
+                    p->choke_this_peer();
+#endif
+
 					continue;
 				}
 

@@ -105,7 +105,10 @@ namespace libtorrent {
 
 #ifdef ATOMIC_LLONG_LOCK_FREE
 		std::int64_t pv = m_stats_counter[c].fetch_add(value, std::memory_order_relaxed);
-		TORRENT_ASSERT(pv + value >= 0);
+		if (pv + value < 0) {
+		    return 0;
+		}
+		//TORRENT_ASSERT(pv + value >= 0);
 		return pv + value;
 #else
 		std::lock_guard<std::mutex> l(m_mutex);

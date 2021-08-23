@@ -1108,8 +1108,6 @@ namespace aux {
 				, int& dht_limit, int& tracker_limit
 				, int& lsd_limit, int& hard_limit, int type_limit);
 			void recalculate_auto_managed_torrents();
-			void recalculate_unchoke_slots();
-			void recalculate_optimistic_unchoke_slots();
 
 			time_point m_created;
 			std::uint16_t session_time() const override

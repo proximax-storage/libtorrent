@@ -1,7 +1,11 @@
-cmake_minimum_required(VERSION 3.15.0 FATAL_ERROR) # Configurable policies: <= CMP0094
+cmake_minimum_required(VERSION 3.9) # Configurable policies: <= CMP0094
 
 cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0092 NEW)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 include(LibtorrentMacros)

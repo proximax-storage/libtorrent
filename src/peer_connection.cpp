@@ -156,9 +156,21 @@ namespace libtorrent {
 		, m_bitfield_received(false)
 		, m_no_download(false)
 		, m_holepunch_mode(false)
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
 		, m_peer_choked(true)
+#else
+        , m_peer_choked(false)
+#endif
+
 		, m_have_all(false)
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 		, m_peer_interested(false)
+#else
+        , m_peer_interested(true)
+#endif
+
 		, m_need_interest_update(false)
 		, m_has_metadata(true)
 		, m_exceeded_limit(false)
@@ -549,8 +561,12 @@ namespace libtorrent {
 			peer_log(peer_log_alert::info, "UPDATE_INTEREST", "not interesting");
 #endif
 
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 		if (!interested) send_not_interested();
 		else t->peer_is_interesting(*this);
+#else
+		if (interested) t->peer_is_interesting(*this);
+#endif
 
 		TORRENT_ASSERT(in_handshake() || is_interesting() == interested);
 
@@ -802,8 +818,14 @@ namespace libtorrent {
 			if (t && t->has_picker())
 				t->picker().check_peer_invariant(m_have_piece, peer_info_struct());
 #endif
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 			if (t->is_upload_only()) send_not_interested();
 			else t->peer_is_interesting(*this);
+#else
+			if (!t->is_upload_only()) t->peer_is_interesting(*this);
+#endif
+
 			disconnect_if_redundant();
 			return;
 		}
@@ -813,23 +835,25 @@ namespace libtorrent {
 		// if we're a seed, we don't keep track of piece availability
 		if (t->has_picker())
 		{
-			TORRENT_ASSERT(m_have_piece.size() == t->torrent_file().num_pieces());
-			t->peer_has(m_have_piece, this);
-			bool interesting = false;
-			for (auto const i : m_have_piece.range())
-			{
-				if (!m_have_piece[i]) continue;
-				// if the peer has a piece and we don't, the peer is interesting
-				if (!t->have_piece(i)
-					&& t->picker().piece_priority(i) != dont_download)
-					interesting = true;
-			}
-			if (interesting) t->peer_is_interesting(*this);
-			else send_not_interested();
+		    TORRENT_ASSERT(m_have_piece.size() == t->torrent_file().num_pieces());
+		    t->peer_has(m_have_piece, this);
+		    bool interesting = false;
+		    for (auto const i : m_have_piece.range())
+		    {
+		        if (!m_have_piece[i]) continue;
+		        // if the peer has a piece and we don't, the peer is interesting
+		        if (!t->have_piece(i)
+		        && t->picker().piece_priority(i) != dont_download)
+		            interesting = true;
+		    }
+		    if (interesting) t->peer_is_interesting(*this);
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+		    else send_not_interested();
 		}
 		else
 		{
-			update_interest();
+		    update_interest();
+#endif
 		}
 	}
 
@@ -997,7 +1021,11 @@ namespace libtorrent {
 			// it might have been the last interesting
 			// piece this peer had. We might not be
 			// interested anymore
-			update_interest();
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+            update_interest();
+#endif
+
 			if (is_disconnecting()) return;
 		}
 
@@ -1815,7 +1843,9 @@ namespace libtorrent {
 			return;
 		}
 
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
 		maybe_unchoke_this_peer();
+#endif
 	}
 
 	void peer_connection::maybe_unchoke_this_peer()
@@ -1880,10 +1910,14 @@ namespace libtorrent {
 
 		if (is_disconnecting()) return;
 
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
+
 		std::shared_ptr<torrent> t = m_torrent.lock();
 		TORRENT_ASSERT(t);
 
 		choke_this_peer();
+
+#endif
 	}
 
 	void peer_connection::choke_this_peer()
@@ -1906,7 +1940,10 @@ namespace libtorrent {
 			t->trigger_optimistic_unchoke();
 		}
 		t->choke_peer(*this);
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
 		t->trigger_unchoke();
+#endif
 	}
 
 	// -----------------------------
@@ -2282,7 +2319,9 @@ namespace libtorrent {
 		m_have_piece = bits;
 		m_num_pieces = num_pieces;
 
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 		update_interest();
+#endif
 	}
 
 	bool peer_connection::disconnect_if_redundant()
@@ -3376,8 +3415,13 @@ namespace libtorrent {
 		TORRENT_ASSERT(m_have_piece.size() == t->torrent_file().num_pieces());
 
 		// if we're finished, we're not interested
-		if (t->is_upload_only()) send_not_interested();
-		else t->peer_is_interesting(*this);
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+        if (t->is_upload_only()) send_not_interested();
+        else t->peer_is_interesting(*this);
+#else
+		if (!t->is_upload_only()) t->peer_is_interesting(*this);
+#endif
 
 		disconnect_if_redundant();
 	}
@@ -3421,8 +3465,10 @@ namespace libtorrent {
 		// if the peer is ready to download stuff, it must have metadata
 		m_has_metadata = true;
 
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
 		// we're never interested in a peer that doesn't have anything
 		send_not_interested();
+#endif
 
 		TORRENT_ASSERT(!m_have_piece.empty() || !t->ready_for_connections());
 		disconnect_if_redundant();
@@ -3787,12 +3833,6 @@ namespace libtorrent {
 			TORRENT_ASSERT(m_peer_info == nullptr
 				|| m_peer_info->optimistically_unchoked == false);
 			return false;
-		}
-
-		if (m_peer_info && m_peer_info->optimistically_unchoked)
-		{
-			m_peer_info->optimistically_unchoked = false;
-			m_counters.inc_stats_counter(counters::num_peers_up_unchoked_optimistic, -1);
 		}
 
 		m_suggest_pieces.clear();
