@@ -196,8 +196,18 @@ namespace aux {
 			, m_connecting(!m_torrent.expired())
 			, m_endgame_mode(false)
 			, m_snubbed(false)
-			, m_interesting(true)
-			, m_choked(false)
+
+#ifdef SIRIUS_INTEREST_MESSAGE_ENABLED
+            , m_interesting(false)
+#else
+            , m_interesting(true)
+#endif
+
+#ifdef SIRIUS_CHOKE_MESSAGE_ENABLED
+            , m_choked(true)
+#else
+            , m_choked(false)
+#endif
 			, m_ignore_stats(false)
 		{}
 

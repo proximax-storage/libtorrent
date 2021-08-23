@@ -172,4 +172,4 @@ class session_delegate {
         return ret;
     }
 
-};
+}
