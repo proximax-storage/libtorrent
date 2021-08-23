@@ -663,6 +663,7 @@ namespace aux {
         void setup_send();
 
 #ifdef SIRIUS_DRIVE_MULTI
+#pragma mark --append_send_buffer(+payload)--
         template <typename Holder>
         void append_send_buffer(Holder buffer, int size, int payload = 0)
         {
@@ -1224,6 +1225,7 @@ namespace aux {
 #endif
 
 #ifdef SIRIUS_DRIVE_MULTI
+#pragma mark --variables--
     protected:
         std::array<uint8_t,32> m_peer_public_key;
         std::array<uint8_t,32> m_download_channel_id;

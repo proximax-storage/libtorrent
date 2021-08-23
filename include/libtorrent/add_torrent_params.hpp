@@ -388,6 +388,11 @@ TORRENT_VERSION_NAMESPACE_3
 		error_code internal_resume_data_error;
 #endif // TORRENT_ABI_VERSION
 
+#ifdef SIRIUS_DRIVE_MULTI
+    public:
+        std::optional<std::array<uint8_t,32>>   m_transactionHash;
+        uint64_t                                m_downloadLimit; // for modify drive - all data size
+#endif
 	};
 
 TORRENT_VERSION_NAMESPACE_3_END
