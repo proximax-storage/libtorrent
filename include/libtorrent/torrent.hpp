@@ -1784,7 +1784,14 @@ namespace libtorrent {
 		// mutate the list while doing this
 		mutable int m_iterating_connections = 0;
 #endif
-	};
+
+#ifdef SIRIUS_DRIVE_MULTI
+    public:
+        std::optional<std::array<uint8_t,32>>   m_transactionHash;
+        uint64_t                                m_downloadLimit; // for modify drive - all data size
+#endif
+    };
+
 }
 
 #endif // TORRENT_TORRENT_HPP_INCLUDED

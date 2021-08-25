@@ -812,14 +812,20 @@ namespace {
         ptr += 32;
 
         if ( delegate->downloadChannelId() )
+        {
             std::memcpy(ptr, delegate->downloadChannelId().value().data(), 32);
+        }
+        else
+        {
+            std::memset(ptr, 0xFF, 32);
+        }
         ptr += 32;
 
-//        if ( !delegate->isClient() )
-//        {
-//            uint64_t uploadedSize = delegate->getUploadedSize( m_download_channel_id );
-//            std::memcpy(ptr, &uploadedSize, 8);
-//        }
+        if ( !delegate->isClient() )
+        {
+            uint64_t uploadedSize = delegate->getUploadedSize( m_download_channel_id );
+            std::memcpy(ptr, &uploadedSize, 8);
+        }
         ptr += 8;
 #endif
 
@@ -1095,19 +1101,34 @@ namespace {
 
         // downloadedSize (size of data downloaded by client from this replicator)
         uint64_t downloadedSize = aux::read_uint64(ptr);
-
+        
         // extract peice info
         r.piece = piece_index_t(aux::read_int32(ptr));
         r.start = aux::read_int32(ptr);
         r.length = aux::read_int32(ptr);
-
-        std::cout << "requested piece=" << r.piece << "; with length=" << r.length << std::endl << std::flush;
 
         // verify receipt and send to other replicators
         {
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+
+            //todo++
+//            if ( std::strcmp(delegate->dbgOurPeerName(),"replicator2")==0  && r.piece%2==1 )
+//            {
+//                std::cerr << ">" << delegate->dbgOurPeerName() << " rejected piece: " << r.piece << ", " << r.start << " to:" << int(m_peer_public_key[0]) << std::endl << std::flush;
+////                write_reject_request( r );
+//                return;
+//            }
+//            if ( std::strcmp(delegate->dbgOurPeerName(),"replicator1")==0  && r.piece%2==0 )
+//            {
+//                std::cerr << ">" << delegate->dbgOurPeerName() << " rejected piece: " << r.piece << ", " << r.start << " to:" << int(m_peer_public_key[0]) << std::endl << std::flush;
+//                write_reject_request( r );
+//                return;
+//            }
+//            std::cout << "requested piece=" << r.piece << "; with length=" << r.length << std::endl << std::flush;
+
+            std::cerr << ">" << delegate->dbgOurPeerName() << " piece: " << r.piece << ", " << r.start << " to:" << int(m_peer_public_key[0]) << std::endl << std::flush;
 
             // only replicators
             if ( !delegate->isClient() )
@@ -1133,7 +1154,6 @@ namespace {
 //                //todo++
                 }
             }
-
         }
 
 
@@ -1240,6 +1260,13 @@ namespace {
         std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
 
         delegate->onPieceReceived(piece_bytes);
+        
+        //todo++
+        //if ( delegate->isClient() )
+        {
+            std::cerr << "<<" << delegate->dbgOurPeerName() << " piece: " << p.piece << ", " << p.start << " from:" << int(m_peer_public_key[0]) << std::endl << std::flush;
+        }
+
 #endif
 		incoming_piece_fragment(piece_bytes);
 		if (!m_recv_buffer.packet_finished()) return;
@@ -2227,12 +2254,14 @@ namespace {
                 disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
             }
 
-//todo        if ( !delegate->isClient() )
+//todo?            if ( !delegate->isClient() )
 //            {
 //                string_view downloadChannelId = root.dict_find_string_value("chId");
 //                //todo check downloadChannelId size
 //                m_download_channel_id = *reinterpret_cast<const std::array<uint8_t,32>*>(&downloadChannelId[0]);
 //            }
+            
+            //todo verify channelId or modifyTransactionHash
 
         }
 #endif
@@ -2434,16 +2463,24 @@ namespace {
         //  - replicator public key,
         //  - downloaded size
 
-        uint64_t            downloadedSize;
-        std::array<uint8_t,64> signature;
         {
+            std::array<uint8_t,64>  signature;
+
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
+
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-            delegate->signReceipt( m_download_channel_id,
-                                   m_peer_public_key, // replicator public key
-                                   downloadedSize,
-                                   signature );
+
+            // only 'client' signs receipts
+            if ( delegate->downloadChannelId() )
+            {
+                delegate->onPieceRequested( r.length );
+
+                delegate->signReceipt( delegate->downloadChannelId().value(),
+                                       m_peer_public_key, // replicator public key
+                                      delegate->requestedSize(),
+                                       signature );
+            }
 
             auto local_endpoint = this->local_endpoint();
             this->remote();
@@ -2456,7 +2493,7 @@ namespace {
             memcpy(ptr,signature.data(),signature.size());
             ptr += signature.size();
 
-            aux::write_uint64(downloadedSize, ptr);
+            aux::write_uint64(delegate->requestedSize(), ptr);
 
             aux::write_int32(static_cast<int>(r.piece), ptr);
             aux::write_int32(r.start, ptr);
@@ -2726,16 +2763,15 @@ namespace {
 
             handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
 
-            //downloadChannelId
-//todo        {
-//                std::shared_ptr<torrent> torrent = associated_torrent().lock();
-//                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+            // downloadChannelId or modifyTransactionHash
+            {
+//todo++++
 //                if ( delegate->isClient() )
 //                {
-//                    handshake["chId"] = std::string( std::begin(delegate->downloadChannelId()),
-//                                                     std::end(delegate->downloadChannelId()) );
+//                    handshake["chId"] = std::string( (char*)std::begin(delegate->downloadChannelId()),
+//                                                    (char*)std::end(delegate->downloadChannelId()) );
 //                }
-//            }
+            }
         }
 
 #endif
@@ -3783,6 +3819,14 @@ namespace {
 
             // Save download channel id
             std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32+32, m_download_channel_id.data());
+            
+            //todo++
+//            {
+//                std::shared_ptr<torrent> torrent = associated_torrent().lock();z
+//                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+//                std::cout << "HHH: " << m_dbgOurPeerName << " " << (int)m_peer_public_key[0]
+//                << " " << (int)delegate->publicKey()[0] << " " << (int)m_download_channel_id[0] << std::endl;
+//            }
 
             uint64_t downloadedSize;
             std::copy(recv_buffer.begin() + 32+32, recv_buffer.begin() + 32+32+8, &downloadedSize);

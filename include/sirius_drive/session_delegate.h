@@ -78,6 +78,14 @@ class session_delegate {
         }
 
         // It will be called,
+        // when a piece is requested,
+        // for accumulating downloaded data size
+        virtual void onPieceRequested( uint64_t pieceSize )
+        {
+            // now 'replicator' does nothing in this case
+        }
+
+        // It will be called,
         // when a piece is sent,
         // for accumulating sent data size
         virtual void onPieceSent( const std::array<uint8_t,32>& downloadChannelId, uint64_t pieceSize )
@@ -101,7 +109,7 @@ class session_delegate {
         virtual void signReceipt( const std::array<uint8_t,32>& downloadChannelId,
                                   //                            clientPublicKey,        //it is accesible from ClientSession
                                   const std::array<uint8_t,32>& replicatorPublicKey,
-                                  uint64_t&                     downloadedSize,
+                                  uint64_t                      downloadedSize,
                                   std::array<uint8_t,64>&       outSignature ) = 0;
 
         // It will be called to verify receipt
@@ -123,14 +131,14 @@ class session_delegate {
         virtual const std::optional<std::array<uint8_t,32>> downloadChannelId() = 0;
 
         // It will be called when 'replicator' answers to 'client' (extended handshake)
-        virtual uint64_t downloadedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;
+        virtual uint64_t receivedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;
 
         // It will be called when 'client' receives an answer from 'replicator' (extended handshake)
         // 'downloadedSize' should be set to proper value (last 'downloadedSize' of peviuos peer_connection)
-        virtual void setDownloadedSize( uint64_t downloadedSize ) = 0;
+        virtual void setStartReceivedSize( uint64_t downloadedSize ) = 0;
 
         // They will be called when 'client' requests a piece from 'replicator' (handshake)
-        virtual uint64_t downloadedSize() = 0;
+        virtual uint64_t receivedSize() = 0;
         virtual uint64_t requestedSize()  = 0;
 
 

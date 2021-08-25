@@ -239,6 +239,11 @@ bool is_downloading_state(int const st)
 		, m_torrent_initialized(false)
 		, m_outstanding_file_priority(false)
 		, m_complete_sent(false)
+#ifdef SIRIUS_DRIVE_MULTI
+        ,m_transactionHash( p.m_transactionHash )
+        ,m_downloadLimit( p.m_downloadLimit )
+
+#endif
 	{
 		// we cannot log in the constructor, because it relies on shared_from_this
 		// being initialized, which happens after the constructor returns.
