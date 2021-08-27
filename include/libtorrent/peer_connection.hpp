@@ -1238,7 +1238,7 @@ namespace aux {
 #pragma mark --variables--
     protected:
         std::array<uint8_t,32> m_peer_public_key;
-        std::array<uint8_t,32> m_download_channel_id;
+        std::array<uint8_t,32> m_transactionHash = {0x0a,0};
         const char* m_dbgOurPeerName = "unset";
 #endif
 

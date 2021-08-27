@@ -240,6 +240,7 @@ bool is_downloading_state(int const st)
 		, m_outstanding_file_priority(false)
 		, m_complete_sent(false)
 #ifdef SIRIUS_DRIVE_MULTI
+        ,m_siriusFlags( p.m_siriusFlags )
         ,m_transactionHash( p.m_transactionHash )
         ,m_downloadLimit( p.m_downloadLimit )
 

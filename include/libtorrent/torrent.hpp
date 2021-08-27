@@ -1787,6 +1787,7 @@ namespace libtorrent {
 
 #ifdef SIRIUS_DRIVE_MULTI
     public:
+        uint32_t                                m_siriusFlags;
         std::optional<std::array<uint8_t,32>>   m_transactionHash;
         uint64_t                                m_downloadLimit; // for modify drive - all data size
 #endif

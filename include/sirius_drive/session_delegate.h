@@ -12,13 +12,9 @@
 
 namespace libtorrent {
 
-struct RawBuffer
-{
-    constexpr RawBuffer( uint8_t* data, size_t size ) : m_data(data), m_size(size) {}
-
-    uint8_t* m_data;
-    size_t   m_size;
-};
+const uint32_t sf_is_replicator     = 0x01;
+const uint32_t sf_is_receiver       = 0x02;
+const uint32_t sf_has_modify_data   = 0x04;
 
 class session_delegate {
     public:
@@ -26,6 +22,13 @@ class session_delegate {
 
         // Replicator behavior differs from client
         virtual bool isClient() const = 0;
+    
+        virtual bool acceptConnection( const std::array<uint8_t,32>&  transactionHash,
+                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
+
+        virtual void onDisconnected( const std::array<uint8_t,32>&  transactionHash,
+                                     const std::array<uint8_t,32>&  peerPublicKey,
+                                     int                            reason ) = 0;
 
         virtual void onHandshake( uint64_t uploadedSize )
         {
@@ -37,7 +40,7 @@ class session_delegate {
             return 0;
         }
 
-        // It will be called on 'replicator' side,
+        // It will be called on 'giving' side,
         // when 'downloader' requests piece
         virtual bool checkDownloadLimit( const std::array<uint8_t,64>&  signature,
                                          const std::array<uint8_t,32>&  downloadChannelId,
@@ -70,28 +73,25 @@ class session_delegate {
         }
 
         // It will be called,
-        // when a piece is received,
-        // for accumulating downloaded data size
-        virtual void onPieceReceived( uint64_t pieceSize )
-        {
-            // now 'replicator' does nothing in this case
-        }
-
-        // It will be called,
         // when a piece is requested,
-        // for accumulating downloaded data size
-        virtual void onPieceRequested( uint64_t pieceSize )
-        {
-            // now 'replicator' does nothing in this case
-        }
+        // for accumulating requested data size
+        virtual void onPieceRequested( const std::array<uint8_t,32>&  transactionHash,
+                                       const std::array<uint8_t,32>&  receiverPublicKey,
+                                       uint64_t                       pieceSize ) = 0;
 
         // It will be called,
         // when a piece is sent,
         // for accumulating sent data size
-        virtual void onPieceSent( const std::array<uint8_t,32>& downloadChannelId, uint64_t pieceSize )
-        {
-            // now 'client' does nothing in this case
-        }
+        virtual void onPieceSent( const std::array<uint8_t,32>&  transactionHash,
+                                  const std::array<uint8_t,32>&  receiverPublicKey,
+                                  uint64_t                       pieceSize ) = 0;
+
+        // It will be called,
+        // when a piece is received,
+        // for accumulating downloaded data size
+        virtual void onPieceReceived( const std::array<uint8_t,32>&  transactionHash,
+                                      const std::array<uint8_t,32>&  senderPublicKey,
+                                      uint64_t                       pieceSize ) = 0;
 
         // It will be called to sign random sequence (for handshake)
         virtual void signHandshake( const uint8_t*              bytes,
@@ -126,9 +126,6 @@ class session_delegate {
 
         // Replicator/Client public key
         virtual const std::array<uint8_t,32>& publicKey() = 0;
-
-        // It will be called when 'client' connects to 'replicator' (in handshake)
-        virtual const std::optional<std::array<uint8_t,32>> downloadChannelId() = 0;
 
         // It will be called when 'replicator' answers to 'client' (extended handshake)
         virtual uint64_t receivedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;

@@ -4264,6 +4264,17 @@ namespace libtorrent {
 	void peer_connection::disconnect(error_code const& ec
 		, operation_t const op, disconnect_severity_t const error)
 	{
+#ifdef SIRIUS_DRIVE_MULTI
+        {
+            std::shared_ptr<torrent> torrent = associated_torrent().lock();
+            if ( torrent )
+            {
+                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                delegate->onDisconnected( m_transactionHash, m_peer_public_key, error );
+            }
+        }
+#endif
+        
 		TORRENT_ASSERT(is_single_thread());
 #if TORRENT_USE_ASSERTS
 		m_disconnect_started = true;
@@ -5904,7 +5915,7 @@ namespace libtorrent {
 
 #ifdef SIRIUS_DRIVE_MULTI
 #pragma mark --payload--
-		// only if TCP sockets
+		// only if we use TCP sockets
 		if ( m_socket.which() == 0 )
         {
             auto& s = boost::get<tcp::socket>( m_socket );
@@ -5915,7 +5926,7 @@ namespace libtorrent {
                 {
                     std::shared_ptr<torrent> torrent = associated_torrent().lock();
                     std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                    delegate->onPieceSent( m_download_channel_id, payload );
+                    delegate->onPieceSent( m_transactionHash, m_peer_public_key, payload );
                 }
 
                 try {

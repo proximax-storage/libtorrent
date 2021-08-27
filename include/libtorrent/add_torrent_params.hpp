@@ -390,6 +390,7 @@ TORRENT_VERSION_NAMESPACE_3
 
 #ifdef SIRIUS_DRIVE_MULTI
     public:
+        uint32_t                                m_siriusFlags = 0;
         std::optional<std::array<uint8_t,32>>   m_transactionHash;
         uint64_t                                m_downloadLimit; // for modify drive - all data size
 #endif
