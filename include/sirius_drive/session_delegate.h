@@ -73,11 +73,18 @@ class session_delegate {
         }
 
         // It will be called,
-        // when a piece is requested,
+        // when a piece is requested by receiver,
         // for accumulating requested data size
         virtual void onPieceRequested( const std::array<uint8_t,32>&  transactionHash,
                                        const std::array<uint8_t,32>&  receiverPublicKey,
                                        uint64_t                       pieceSize ) = 0;
+
+        // It will be called,
+        // when a piece request received (by sender),
+        // for accumulating requested data size
+        virtual void onPieceRequestReceived( const std::array<uint8_t,32>&  transactionHash,
+                                             const std::array<uint8_t,32>&  receiverPublicKey,
+                                             uint64_t                       pieceSize ) = 0;
 
         // It will be called,
         // when a piece is sent,
@@ -128,15 +135,15 @@ class session_delegate {
         virtual const std::array<uint8_t,32>& publicKey() = 0;
 
         // It will be called when 'replicator' answers to 'client' (extended handshake)
-        virtual uint64_t receivedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;
+        //virtual uint64_t receivedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;
 
         // It will be called when 'client' receives an answer from 'replicator' (extended handshake)
         // 'downloadedSize' should be set to proper value (last 'downloadedSize' of peviuos peer_connection)
-        virtual void setStartReceivedSize( uint64_t downloadedSize ) = 0;
+        //virtual void setStartReceivedSize( uint64_t downloadedSize ) = 0;
 
         // They will be called when 'client' requests a piece from 'replicator' (handshake)
-        virtual uint64_t receivedSize() = 0;
-        virtual uint64_t requestedSize()  = 0;
+        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  peerPublicKey ) = 0;
+        virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
 
 
         virtual const char* dbgOurPeerName() = 0;

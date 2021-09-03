@@ -4264,17 +4264,6 @@ namespace libtorrent {
 	void peer_connection::disconnect(error_code const& ec
 		, operation_t const op, disconnect_severity_t const error)
 	{
-#ifdef SIRIUS_DRIVE_MULTI
-        {
-            std::shared_ptr<torrent> torrent = associated_torrent().lock();
-            if ( torrent )
-            {
-                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                delegate->onDisconnected( m_transactionHash, m_peer_public_key, error );
-            }
-        }
-#endif
-        
 		TORRENT_ASSERT(is_single_thread());
 #if TORRENT_USE_ASSERTS
 		m_disconnect_started = true;
@@ -4454,6 +4443,17 @@ namespace libtorrent {
 		{
 			e->on_disconnect(ec);
 		}
+#endif
+
+#ifdef SIRIUS_DRIVE_MULTI
+        {
+            std::shared_ptr<torrent> torrent = associated_torrent().lock();
+            if ( torrent )
+            {
+                std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                delegate->onDisconnected( m_transactionHash, m_peer_public_key, torrent->m_siriusFlags );
+            }
+        }
 #endif
 
 		if (ec == error::address_in_use
@@ -5921,16 +5921,24 @@ namespace libtorrent {
             auto& s = boost::get<tcp::socket>( m_socket );
             s.async_write_some( vec, [this]( error_code const& error, std::size_t const bytes_transferred )
             {
-                int payload = m_send_buffer.getSentPayload( bytes_transferred );
-                if ( payload > 0 )
+                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+                if ( torrent != nullptr )
                 {
-                    std::shared_ptr<torrent> torrent = associated_torrent().lock();
                     std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                    delegate->onPieceSent( m_transactionHash, m_peer_public_key, payload );
+                    
+                    if ( !delegate->isClient() )
+                    {
+                        int payload = m_send_buffer.getSentPayload( bytes_transferred );
+                        if ( payload > 0 )
+                        {
+                            delegate->onPieceSent( m_transactionHash, m_peer_public_key, payload );
+                        }
+                    }
                 }
 
                 try {
-                    on_send_data( error, bytes_transferred );
+                    if ( !m_destructed )
+                        on_send_data( error, bytes_transferred );
                 }
                 catch ( system_error const& e ) {
                     on_error( e.code());

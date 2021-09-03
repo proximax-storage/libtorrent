@@ -1133,9 +1133,13 @@ namespace {
                 std::cerr << delegate->dbgOurPeerName() << " request from : " << (int)m_peer_public_key[0] << std::endl << std::flush;
                 assert(0);
             }
+            
+            delegate->onPieceRequestReceived( m_transactionHash,
+                                              m_peer_public_key,      // receiver public key
+                                              r.length );
 
             delegate->sendReceiptToOtherReplicators( m_transactionHash,
-                                                     m_peer_public_key,      // client public key
+                                                     m_peer_public_key,      // receiver public key
                                                      downloadedSize,
                                                      signature );
 
@@ -2458,7 +2462,7 @@ namespace {
 
             delegate->signReceipt( m_transactionHash,
                                    m_peer_public_key, // replicator public key
-                                   delegate->requestedSize(),
+                                   delegate->requestedSize( m_peer_public_key ),
                                    signature );
 
             auto local_endpoint = this->local_endpoint();
@@ -2472,7 +2476,7 @@ namespace {
             memcpy(ptr,signature.data(),signature.size());
             ptr += signature.size();
 
-            aux::write_uint64(delegate->requestedSize(), ptr);
+            aux::write_uint64(delegate->requestedSize( m_peer_public_key ), ptr);
 
             aux::write_int32(static_cast<int>(r.piece), ptr);
             aux::write_int32(r.start, ptr);

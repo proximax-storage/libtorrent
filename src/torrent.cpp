@@ -5981,7 +5981,11 @@ namespace {
 		if (it != m_outgoing_pids.end())
 		{
 			m_outgoing_pids.erase(it);
-		}
+
+#ifdef SIRIUS_DRIVE_MULTI
+            std::shared_ptr<session_delegate> delegate = session().delegate().lock();
+#endif
+        }
 
 		// only schedule the peer for actual removal if in fact
 		// we can be sure peer_connection will be kept alive until
