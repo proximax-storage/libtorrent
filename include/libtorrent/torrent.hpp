@@ -1788,8 +1788,14 @@ namespace libtorrent {
 #ifdef SIRIUS_DRIVE_MULTI
     public:
         uint32_t                                m_siriusFlags;
+        
+        // It is OPTIONAL, because now replicator does not know 'download channel id'
+        // when it adds torrent to session
         std::optional<std::array<uint8_t,32>>   m_transactionHash;
+        
         uint64_t                                m_downloadLimit; // for modify drive - all data size
+        
+        deadline_timer                          m_modify_end_timer; //todo not used ?
 #endif
     };
 

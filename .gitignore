@@ -88,3 +88,5 @@ tools/session_log_alerts
 _bin
 _bin_rel
 _build
+
+settings.json

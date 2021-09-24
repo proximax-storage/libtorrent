@@ -100,6 +100,10 @@ class session_delegate {
                                       const std::array<uint8_t,32>&  senderPublicKey,
                                       uint64_t                       pieceSize ) = 0;
 
+        virtual void onAllOutgoingConnectionsClosed( const std::array<uint8_t,32>& /*transactionHash*/ )
+        {
+        }
+    
         // It will be called to sign random sequence (for handshake)
         virtual void signHandshake( const uint8_t*              bytes,
                                     size_t                      size,
@@ -145,6 +149,8 @@ class session_delegate {
         virtual uint64_t receivedSize( const std::array<uint8_t,32>&  peerPublicKey ) = 0;
         virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
 
+        // It will be called by 'DefaultSession' class
+        virtual void        onMessageReceived( const std::string& query, const std::string& ) = 0;
 
         virtual const char* dbgOurPeerName() = 0;
     };
