@@ -1123,7 +1123,7 @@ namespace {
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
 
-            if ( !delegate->verifyReceipt( m_transactionHash,
+            if ( !delegate->verifyReceipt( m_transactionHash,       // download channel id
                                            m_peer_public_key,       // receiver public key
                                            delegate->publicKey(),   // sender public key
                                            downloadedSize, signature ) )
@@ -1134,8 +1134,8 @@ namespace {
                 assert(0);
             }
             
-            delegate->onPieceRequestReceived( m_transactionHash,
-                                              m_peer_public_key,      // receiver public key
+            delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
+                                              m_peer_public_key,    // receiver public key
                                               r.length );
 
             delegate->sendReceiptToOtherReplicators( m_transactionHash,

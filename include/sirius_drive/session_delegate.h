@@ -55,6 +55,7 @@ class session_delegate {
         // (must be implemented by DownloadLimiter)
         virtual void acceptReceiptFromAnotherReplicator( const std::array<uint8_t,32>&  downloadChannelId,
                                                          const std::array<uint8_t,32>&  clientPublicKey,
+                                                         const std::array<uint8_t,32>&  replicatorPublicKey,
                                                          uint64_t                       downloadedSize,
                                                          const std::array<uint8_t,64>&  signature )
         {
