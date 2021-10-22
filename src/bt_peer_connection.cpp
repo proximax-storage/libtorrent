@@ -1137,20 +1137,20 @@ namespace {
             delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
                                               m_peer_public_key,    // receiver public key
                                               r.length );
+            // check receipt limit
+            if ( !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
+            {
+                // ignore request
+                
+                //todo log?
+                return;
+            }
 
             delegate->sendReceiptToOtherReplicators( m_transactionHash,
                                                      m_peer_public_key,      // receiver public key
                                                      downloadedSize,
                                                      signature );
-
-            // check receipt limit
-            if ( !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
-            {
-//                //todo++
-            }
         }
-
-
 #else
         peer_request r;
 		const char* ptr = recv_buffer.data() + 1;

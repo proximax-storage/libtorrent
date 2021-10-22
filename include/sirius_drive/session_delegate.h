@@ -77,7 +77,7 @@ class session_delegate {
         // when a piece is requested by receiver,
         // for accumulating requested data size
         virtual void onPieceRequested( const std::array<uint8_t,32>&  transactionHash,
-                                       const std::array<uint8_t,32>&  receiverPublicKey,
+                                       const std::array<uint8_t,32>&  senderPublicKey,
                                        uint64_t                       pieceSize ) = 0;
 
         // It will be called,
