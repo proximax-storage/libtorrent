@@ -73,30 +73,28 @@ class session_delegate {
             // 'client' ignores this call
         }
 
-        // It will be called,
-        // when a piece is requested by receiver,
-        // for accumulating requested data size
-        virtual void onPieceRequested( const std::array<uint8_t,32>&  transactionHash,
+        // It will be called by client (or replicator-receiver),
+        // when a piece is requested by receiver
+        // (to accumulate requested data size; now it is not used)
+        virtual void onPieceRequest( const std::array<uint8_t,32>&  transactionHash,
                                        const std::array<uint8_t,32>&  senderPublicKey,
                                        uint64_t                       pieceSize ) = 0;
 
-        // It will be called,
-        // when a piece request received (by sender),
-        // for accumulating requested data size
+        // It will be called by sender,
+        // when a piece request received
+        // (to accumulate requesting data size)
         virtual void onPieceRequestReceived( const std::array<uint8_t,32>&  transactionHash,
                                              const std::array<uint8_t,32>&  receiverPublicKey,
                                              uint64_t                       pieceSize ) = 0;
 
-        // It will be called,
-        // when a piece is sent,
-        // for accumulating sent data size
+        // It will be called by sender,
+        // when a piece is sent
         virtual void onPieceSent( const std::array<uint8_t,32>&  transactionHash,
                                   const std::array<uint8_t,32>&  receiverPublicKey,
                                   uint64_t                       pieceSize ) = 0;
 
         // It will be called,
         // when a piece is received,
-        // for accumulating downloaded data size
         virtual void onPieceReceived( const std::array<uint8_t,32>&  transactionHash,
                                       const std::array<uint8_t,32>&  senderPublicKey,
                                       uint64_t                       pieceSize ) = 0;

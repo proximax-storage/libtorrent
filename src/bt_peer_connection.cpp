@@ -2458,7 +2458,7 @@ namespace {
 
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
             
-            delegate->onPieceRequested( m_transactionHash, m_peer_public_key, r.length );
+            delegate->onPieceRequest( m_transactionHash, m_peer_public_key, r.length );
 
             delegate->signReceipt( m_transactionHash,
                                    m_peer_public_key, // replicator public key
