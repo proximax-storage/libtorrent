@@ -1143,7 +1143,7 @@ namespace {
                 // ignore request
                 
                 //todo log?
-                return;
+                //return;
             }
 
             delegate->sendReceiptToOtherReplicators( m_transactionHash,
