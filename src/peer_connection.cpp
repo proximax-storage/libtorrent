@@ -862,10 +862,10 @@ namespace libtorrent {
 		m_counters.inc_stats_counter(counters::num_tcp_peers
 			+ static_cast<std::uint8_t>(socket_type_idx(m_socket)), -1);
 
+#if TORRENT_USE_ASSERTS
 //		INVARIANT_CHECK;
 		TORRENT_ASSERT(!m_in_constructor);
 		TORRENT_ASSERT(!m_destructed);
-#if TORRENT_USE_ASSERTS
 		m_destructed = true;
 #endif
 
@@ -5936,6 +5936,7 @@ namespace libtorrent {
                     }
                 }
 
+#if TORRENT_USE_ASSERTS
                 try {
                     if ( !m_destructed )
                         on_send_data( error, bytes_transferred );
@@ -5952,6 +5953,7 @@ namespace libtorrent {
                     std::runtime_error e( "unknown exception" );
                     on_exception( e );
                 }
+#endif
             } );
         }
 		else
