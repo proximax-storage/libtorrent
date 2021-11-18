@@ -1239,6 +1239,7 @@ namespace aux {
     protected:
         std::array<uint8_t,32> m_peer_public_key;
         std::array<uint8_t,32> m_transactionHash = {0x0a,0};
+        bool                   m_isDownloadUnlimited = false;
         const char* m_dbgOurPeerName = "unset";
 #endif
 

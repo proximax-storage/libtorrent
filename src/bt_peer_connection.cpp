@@ -1138,12 +1138,20 @@ namespace {
                                               m_peer_public_key,    // receiver public key
                                               r.length );
             // check receipt limit
-            if ( !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
+            if ( !m_isDownloadUnlimited && !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
             {
                 // ignore request
-                
+                std::cerr << "checkDownloadLimit failed: outgoing:" << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
+                            << " from: "  << (int)m_peer_public_key[0]
+                            << " hash: "  << (int)m_transactionHash[0]
+                            << " flags: " << torrent->m_siriusFlags
+                            << std::endl << std::flush;
+
+                std::cout << std::endl;
+
                 //todo log?
-                //return;
+                //todo disconnect?
+                return;
             }
 
             delegate->sendReceiptToOtherReplicators( m_transactionHash,
@@ -2214,14 +2222,13 @@ namespace {
 #pragma mark --rd-EXT-handshake-and-verify-it--
 
         string_view signatureStr = root.dict_find_string_value("sign");
-        if ( signatureStr.empty() )
+        if ( signatureStr.empty() || signatureStr.length() != 64 )
         {
             //invalid_encrypt_handshake
             disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
         }
         else
         {
-            //todo check signature size
             const auto signature = *reinterpret_cast<const std::array<uint8_t,64>*>(&signatureStr[0]);
 
 //            std::cerr << "<<><><>> verify by '" << m_dbgOurPeerName << "'" << std::endl;
@@ -2240,16 +2247,6 @@ namespace {
             {
                 disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
             }
-
-//todo?            if ( !delegate->isClient() )
-//            {
-//                string_view downloadChannelId = root.dict_find_string_value("chId");
-//                //todo check downloadChannelId size
-//                m_transactionHash = *reinterpret_cast<const std::array<uint8_t,32>*>(&downloadChannelId[0]);
-//            }
-            
-            //todo verify channelId or modifyTransactionHash
-
         }
 #endif
 
@@ -3820,23 +3817,36 @@ namespace {
 //                                    << std::endl << std::flush;
                     }
                 }
-//                std::cerr << "'" << delegate->dbgOurPeerName() << "' m_transactionHash: " << int(m_transactionHash[0]) << std::endl;
+                
+                //std::cerr << "'" << delegate->dbgOurPeerName() << "' m_transactionHash: " << int(m_transactionHash[0]) << std::endl;
 
-//                std::cerr << is_outgoing() << " established '" << delegate->dbgOurPeerName()
+//                std::cerr << "outgoing:" << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
 //                            << " from: "  << (int)m_peer_public_key[0]
 //                            << " hash: "  << (int)m_transactionHash[0]
 //                            << " flags: " << torrent->m_siriusFlags
 //                            << std::endl << std::flush;
                 
-                if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key ) )
                 {
-                    std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
-                    //todo? - errors::error_code_max, operation_t::unknown
-                    disconnect( errors::error_code_max, operation_t::unknown );
+                    bool isPeerAReplicator;
+                    if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
+                    {
+                        if ( is_outgoing() )
+                        {
+                            std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
+                            
+                            //todo? - errors::error_code_max, operation_t::unknown
+                            disconnect( errors::error_code_max, operation_t::unknown );
+                        }
+                    }
+
+                    m_isDownloadUnlimited = !delegate->isClient() && isPeerAReplicator;
                 }
+//                std::cerr << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
+//                            << " from: "  << (int)m_peer_public_key[0]
+//                            << " hash: "  << (int)m_transactionHash[0]
+//                            << " m_isDownloadUnlimited: " << m_isDownloadUnlimited
+//                            << std::endl << std::flush;
             }
-            
-            
 
             uint64_t downloadedSize;
             std::copy(recv_buffer.begin() + 32+32, recv_buffer.begin() + 32+32+8, &downloadedSize);

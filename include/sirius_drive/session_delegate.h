@@ -24,7 +24,8 @@ class session_delegate {
         virtual bool isClient() const = 0;
     
         virtual bool acceptConnection( const std::array<uint8_t,32>&  transactionHash,
-                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
+                                       const std::array<uint8_t,32>&  peerPublicKey,
+                                       bool*                          outIsDownloadUnlimited ) = 0;
 
         virtual void onDisconnected( const std::array<uint8_t,32>&  transactionHash,
                                      const std::array<uint8_t,32>&  peerPublicKey,
