@@ -259,13 +259,13 @@ TORRENT_TEST(v2_only)
 	TEST_CHECK(info.info_hashes().has_v2());
 	TEST_CHECK(!info.info_hashes().has_v1());
 	TEST_EQUAL(info.files().file_name(0_file), "A");
-	TEST_EQUAL(info.files().pad_file_at(1_file), true);
+	TEST_CHECK(info.files().pad_file_at(1_file));
 	TEST_EQUAL(info.files().file_name(2_file), "B");
 	TEST_EQUAL(info.name(), "test");
 
 	lt::create_torrent t2(info);
 	std::vector<char> buffer2;
-	lt::bencode(std::back_inserter(buffer2), t.generate());
+	lt::bencode(std::back_inserter(buffer2), t2.generate());
 
 	TEST_CHECK(buffer == buffer2);
 }
@@ -337,6 +337,7 @@ TORRENT_TEST(create_torrent_symlink)
 			++found;
 		}
 	}
+	TEST_EQUAL(found, 4);
 }
 
 #endif
@@ -522,4 +523,28 @@ TORRENT_TEST(piece_layer)
 	TEST_CHECK(info.piece_layer(0_file).size() == lt::sha256_hash::size() * 2);
 	TEST_CHECK(info.piece_layer(1_file).size() == lt::sha256_hash::size());
 	TEST_CHECK(info.piece_layer(2_file).size() == lt::sha256_hash::size());
+}
+
+TORRENT_TEST(pieces_root_empty_file)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-empty", 0);
+	fs.add_file("test/2-small", 0x3fff);
+	fs.add_file("test/3-empty", 0);
+	lt::create_torrent t(fs, 0x4000);
+
+	using p = lt::piece_index_t::diff_type;
+	t.set_hash2(1_file, p(0), lt::sha256_hash::max());
+
+	std::vector<char> buffer;
+	lt::entry e = t.generate();
+	TEST_CHECK(!e["info"]["files tree"]["test"]["1-empty"].find_key("pieces root"));
+	TEST_CHECK(!e["info"]["files tree"]["test"]["2-small"].find_key("pieces root"));
+	TEST_CHECK(!e["info"]["files tree"]["test"]["3-small"].find_key("pieces root"));
+
+	lt::bencode(std::back_inserter(buffer), e);
+	lt::torrent_info info(buffer, lt::from_span);
+
+	TEST_CHECK(info.files().root(0_file).is_all_zeros());
+	TEST_CHECK(!info.files().root(1_file).is_all_zeros());
 }

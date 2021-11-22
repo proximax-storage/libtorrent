@@ -50,6 +50,7 @@ namespace libtorrent
 {
 	EXPORT std::string time_now_string();
 	EXPORT std::string time_to_string(lt::time_point const tp);
+	EXPORT std::string test_listen_interface();
 }
 
 constexpr inline lt::download_priority_t operator "" _pri(unsigned long long const p)
@@ -75,6 +76,14 @@ struct EXPORT ofstream : std::ofstream
 };
 
 EXPORT bool exists(std::string const& f);
+
+struct file_ent
+{
+	std::int64_t size;
+	bool pad;
+};
+
+EXPORT lt::file_storage make_files(std::vector<file_ent> files, int piece_size);
 
 #endif
 

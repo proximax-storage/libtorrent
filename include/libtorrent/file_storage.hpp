@@ -233,9 +233,9 @@ namespace aux {
 		// We use int to index into file merkle trees, so a file may not contain more
 		// than INT_MAX entries. That means INT_MAX / 2 blocks (leafs) in each
 		// tree.
-		static constexpr std::int64_t max_file_size = std::min(
+		static constexpr std::int64_t max_file_size = (std::min)(
 			(std::int64_t(1) << 48) - 1
-			, std::int64_t(std::numeric_limits<int>::max() / 2) * default_block_size);
+			, std::int64_t((std::numeric_limits<int>::max)() / 2) * default_block_size);
 		static constexpr std::int64_t max_file_offset = (std::int64_t(1) << 48) - 1;
 
 		// returns true if the piece length has been initialized
@@ -286,6 +286,16 @@ namespace aux {
 		//
 		// ``symlink_path`` is the path the file is a symlink to. To make this a
 		// symlink you also need to set the file_storage::flag_symlink file flag.
+		//
+		// ``root_hash`` is an optional pointer to a 32 byte SHA-256 hash, being
+		// the merkle tree root hash for this file. This is only used for v2
+		// torrents. If the ``root hash`` is specified for one file, it has to
+		// be specified for all, otherwise this function will fail.
+		// Note that the buffer ``root_hash`` points to must out-live the
+		// file_storage object, it will not be copied. This parameter is only
+		// used when *loading* torrents, that already have their file hashes
+		// computed. When creating torrents, the file hashes will be computed by
+		// the piece hashes.
 		//
 		// If more files than one are added, certain restrictions to their paths
 		// apply. In a multi-file file storage (torrent), all files must share
@@ -615,6 +625,9 @@ namespace aux {
 		// this is an optimization for create_torrent
 		std::string const& internal_symlink(file_index_t index) const;
 
+		// internal
+		void remove_tail_padding();
+
 	private:
 
 		std::string internal_file_path(file_index_t index) const;
@@ -685,7 +698,7 @@ namespace aux {
 	// v1 torrents. Both v1 and v2 structures must describe the same file layout,
 	// this compares the two.
 	TORRENT_EXTRA_EXPORT
-	bool files_equal(file_storage const& lhs, file_storage const& rhs);
+	bool files_compatible(file_storage const& lhs, file_storage const& rhs);
 
 	// returns the piece range that entirely falls within the specified file. the
 	// end piece is one-past the last piece that entirely falls within the file.
@@ -699,6 +712,9 @@ namespace aux {
 	// used as loop boundaries.
 	TORRENT_EXTRA_EXPORT std::tuple<piece_index_t, piece_index_t>
 	file_piece_range_inclusive(file_storage const& fs, file_index_t file);
+
+	TORRENT_EXTRA_EXPORT
+	std::int64_t size_on_disk(file_storage const& fs);
 
 } // namespace aux
 } // namespace libtorrent

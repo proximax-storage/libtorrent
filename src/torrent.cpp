@@ -109,6 +109,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/generate_peer_id.hpp"
 #include "libtorrent/aux_/announce_entry.hpp"
 #include "libtorrent/ssl.hpp"
+#include "libtorrent/aux_/apply_pad_files.hpp"
 
 #ifdef TORRENT_SSL_PEERS
 #include "libtorrent/ssl_stream.hpp"
@@ -195,6 +196,8 @@ bool is_downloading_state(int const st)
 		, m_stats_counters(ses.stats_counters())
 		, m_added_time(p.added_time ? p.added_time : std::time(nullptr))
 		, m_completed_time(p.completed_time)
+		, m_last_seen_complete(p.last_seen_complete)
+		, m_swarm_last_seen_complete(p.last_seen_complete)
 		, m_info_hash(p.info_hashes)
 		, m_error_file(torrent_status::error_file_none)
 		, m_sequence_number(-1)
@@ -262,7 +265,11 @@ bool is_downloading_state(int const st)
 			m_torrent_file = (p.ti ? p.ti : std::make_shared<torrent_info>(m_info_hash));
 
 		if (m_torrent_file->is_valid())
-			initialize_merkle_trees();
+		{
+			error_code ec = initialize_merkle_trees();
+			if (ec) throw system_error(ec);
+			m_size_on_disk = aux::size_on_disk(m_torrent_file->files());
+		}
 
 		// --- WEB SEEDS ---
 
@@ -386,16 +393,12 @@ bool is_downloading_state(int const st)
 		{
 			if (!p.merkle_trees.empty())
 				load_merkle_trees(
-					std::move(p.merkle_trees), std::move(p.merkle_tree_mask));
+					std::move(p.merkle_trees)
+					, std::move(p.merkle_tree_mask)
+					, std::move(p.verified_leaf_hashes));
 
 			// we really don't want to store extra copies of the trees
 			TORRENT_ASSERT(p.merkle_trees.empty());
-
-			if (!p.verified_leaf_hashes.empty())
-			{
-				TORRENT_ASSERT(!has_hash_picker());
-				need_hash_picker(std::move(p.verified_leaf_hashes));
-			}
 		}
 
 		if (valid_metadata())
@@ -410,24 +413,27 @@ bool is_downloading_state(int const st)
 
 	void torrent::load_merkle_trees(
 		aux::vector<std::vector<sha256_hash>, file_index_t> trees_import
-		, aux::vector<std::vector<bool>, file_index_t> mask)
+		, aux::vector<std::vector<bool>, file_index_t> mask
+		, aux::vector<std::vector<bool>, file_index_t> verified)
 	{
 		auto const& fs = m_torrent_file->orig_files();
 
+		std::vector<bool> const empty_verified;
 		for (file_index_t i{0}; i < fs.end_file(); ++i)
 		{
 			if (fs.pad_file_at(i) || fs.file_size(i) == 0)
 				continue;
 
 			if (i >= trees_import.end_index()) break;
+			std::vector<bool> const& verified_bitmask = (i >= verified.end_index()) ? empty_verified : verified[i];
 			if (i < mask.end_index() && !mask[i].empty())
 			{
 				mask[i].resize(m_merkle_trees[i].size(), false);
-				m_merkle_trees[i].load_sparse_tree(trees_import[i], mask[i]);
+				m_merkle_trees[i].load_sparse_tree(trees_import[i], mask[i], verified_bitmask);
 			}
 			else
 			{
-				m_merkle_trees[i].load_tree(trees_import[i]);
+				m_merkle_trees[i].load_tree(trees_import[i], verified_bitmask);
 			}
 		}
 	}
@@ -1110,9 +1116,18 @@ bool is_downloading_state(int const st)
 		pause();
 	}
 
-	void torrent::on_piece_fail_sync(piece_index_t, piece_block) try
+	void torrent::on_piece_fail_sync(piece_index_t const piece, piece_block) try
 	{
 		if (m_abort) return;
+
+		// the user may have called force_recheck, which clears
+		// the piece picker
+		if (has_picker())
+		{
+			// unlock the piece and restore it, as if no block was
+			// ever downloaded for it.
+			m_picker->restore_piece(piece);
+		}
 
 		update_gauge();
 		// some peers that previously was no longer interesting may
@@ -1202,15 +1217,8 @@ bool is_downloading_state(int const st)
 			|| settings().get_int(settings_pack::suggest_mode)
 			== settings_pack::suggest_read_cache);
 
-		int const blocks_per_piece
-			= (m_torrent_file->piece_length() + block_size() - 1) / block_size();
-		int const blocks_in_last_piece
-			= ((m_torrent_file->total_size() % m_torrent_file->piece_length())
-			+ block_size() - 1) / block_size();
-
-		auto pp = std::make_unique<piece_picker>(blocks_per_piece
-			, blocks_in_last_piece
-			, m_torrent_file->num_pieces());
+		auto pp = std::make_unique<piece_picker>(m_torrent_file->total_size()
+			, m_torrent_file->piece_length());
 
 		if (m_have_all) pp->we_have_all();
 
@@ -1230,15 +1238,9 @@ bool is_downloading_state(int const st)
 		}
 	}
 
-	void torrent::need_hash_picker(aux::vector<std::vector<bool>, file_index_t> verified)
+	void torrent::need_hash_picker()
 	{
-		if (m_hash_picker)
-		{
-			// we only set this if we create the picker on torrent creation,
-			// which is the first time we construct the hash picker in that case
-			TORRENT_ASSERT(verified.empty());
-			return;
-		}
+		if (m_hash_picker) return;
 
 		TORRENT_ASSERT(valid_metadata());
 		TORRENT_ASSERT(m_connections_initialized);
@@ -1246,12 +1248,7 @@ bool is_downloading_state(int const st)
 		//INVARIANT_CHECK;
 
 		m_hash_picker.reset(new hash_picker(m_torrent_file->orig_files()
-			, m_merkle_trees, std::move(verified)
-			// if we have all the piece layers and the piece size is the same as
-			// the block size, we have all the hashes we need already. This
-			// means "have all hashes".
-			, m_v2_piece_layers_validated
-				&& m_torrent_file->piece_length() == default_block_size));
+			, m_merkle_trees));
 	}
 
 	struct piece_refcount
@@ -1839,56 +1836,25 @@ bool is_downloading_state(int const st)
 
 			TORRENT_ASSERT(block_size() > 0);
 
-			for (auto const i : fs.file_range())
+			m_padding_bytes = 0;
+			std::vector<piece_index_t> have_pieces;
+
+			aux::apply_pad_files(fs, [&](piece_index_t const piece, int const bytes)
 			{
-				if (!fs.pad_file_at(i) || fs.file_size(i) == 0) continue;
+				m_padding_bytes += bytes;
+				if (bytes == fs.piece_size(piece))
+					have_pieces.push_back(piece);
+				m_picker->set_pad_bytes(piece, bytes);
+			});
 
-				peer_request pr = m_torrent_file->map_file(i, 0, int(fs.file_size(i)));
-				int off = pr.start & (block_size() - 1);
-				if (off != 0) { pr.length -= block_size() - off; pr.start += block_size() - off; }
-				TORRENT_ASSERT((pr.start & (block_size() - 1)) == 0);
-
-				int block = block_size();
-				piece_block pb(pr.piece, pr.start / block);
-				for (; pr.length >= block; pr.length -= block, ++pb.block_index)
-				{
-					if (pb.block_index == blocks_per_piece) { pb.block_index = 0; ++pb.piece_index; }
-					m_picker->mark_as_pad(pb);
-					++m_padding_blocks;
-				}
-				// ugly edge case where padfiles are not used they way they're
-				// supposed to be. i.e. added back-to back or at the end
-				if (pb.block_index == blocks_per_piece) { pb.block_index = 0; ++pb.piece_index; }
-				if (pr.length > 0 && ((next(i) != fs.end_file() && fs.pad_file_at(next(i)))
-					|| next(i) == fs.end_file()))
-				{
-					m_picker->mark_as_finished(pb, nullptr);
-				}
-			}
-
-			if (m_padding_blocks > 0)
+			for (auto i : have_pieces)
 			{
-				// if we marked an entire piece as finished, we actually
-				// need to consider it finished
-
-				std::vector<piece_picker::downloading_piece> dq
-					= m_picker->get_download_queue();
-
-				std::vector<piece_index_t> have_pieces;
-
-				for (auto const& p : dq)
-				{
-					int const num_blocks = m_picker->blocks_in_piece(p.index);
-					if (p.finished < num_blocks) continue;
-					have_pieces.push_back(p.index);
-				}
-
-				for (auto i : have_pieces)
-				{
-					picker().piece_passed(i);
-					TORRENT_ASSERT(picker().have_piece(i));
-					we_have(i);
-				}
+				// we may have this piece already, if we picked it up from
+				// resume data.
+				if (m_picker->have_piece(i)) continue;
+//				picker().piece_passed(i);
+//				TORRENT_ASSERT(picker().have_piece(i));
+				we_have(i);
 			}
 		}
 
@@ -2282,10 +2248,7 @@ bool is_downloading_state(int const st)
 // instead, just clear which pieces we have
 		if (m_picker)
 		{
-			int const blocks_per_piece = (m_torrent_file->piece_length() + block_size() - 1) / block_size();
-			int const blocks_in_last_piece = ((m_torrent_file->total_size() % m_torrent_file->piece_length())
-				+ block_size() - 1) / block_size();
-			m_picker->resize(blocks_per_piece, blocks_in_last_piece, m_torrent_file->num_pieces());
+			m_picker->resize(m_torrent_file->total_size(), m_torrent_file->piece_length());
 
 			m_file_progress.clear();
 			m_file_progress.init(picker(), m_torrent_file->files());
@@ -2377,6 +2340,19 @@ bool is_downloading_state(int const st)
 
 		for (int i = 0; i < num_outstanding; ++i)
 		{
+			if (has_picker())
+			{
+				// skip pieces we already have
+				while (m_checking_piece < m_torrent_file->end_piece()
+					&& m_picker->have_piece(m_checking_piece))
+				{
+					++m_checking_piece;
+					++m_num_checked_pieces;
+				}
+			}
+
+			if (m_checking_piece >= m_torrent_file->end_piece()) break;
+
 			auto flags = disk_interface::sequential_access | disk_interface::volatile_read;
 			if (torrent_file().info_hashes().has_v1())
 				flags |= disk_interface::v1_hash;
@@ -2487,7 +2463,9 @@ bool is_downloading_state(int const st)
 			if (torrent_file().info_hashes().has_v1())
 				hash_passed[0] = piece_hash == m_torrent_file->hash_for_piece(piece);
 
-			if (torrent_file().info_hashes().has_v2())
+			// if the v1 hash failed the check, don't add the v2 hashes to the
+			// merkle tree. They are most likely invalid.
+			if (torrent_file().info_hashes().has_v2() && !bool(hash_passed[0] == false))
 			{
 				hash_passed[1] = on_blocks_hashed(piece, block_hashes);
 			}
@@ -2533,17 +2511,25 @@ bool is_downloading_state(int const st)
 				m_picker->mark_as_finished(piece_block(piece, i), nullptr);
 		}
 
+		if (m_checking_piece < m_torrent_file->end_piece())
+		{
+			// skip pieces we already have
+			while (m_picker->have_piece(m_checking_piece))
+			{
+				++m_checking_piece;
+				++m_num_checked_pieces;
+				if (m_checking_piece >= m_torrent_file->end_piece())
+				{
+					// actually, we already have outstanding jobs for
+					// the remaining pieces. We just need to wait for them
+					// to finish
+					break;
+				}
+			}
+		}
+
 		if (m_num_checked_pieces < m_torrent_file->end_piece())
 		{
-			// we're not done yet, issue another job
-			if (m_checking_piece >= m_torrent_file->end_piece())
-			{
-				// actually, we already have outstanding jobs for
-				// the remaining pieces. We just need to wait for them
-				// to finish
-				return;
-			}
-
 			// we paused the checking
 			if (!should_check_files())
 			{
@@ -2559,6 +2545,9 @@ bool is_downloading_state(int const st)
 				}
 				return;
 			}
+
+			if (m_checking_piece >= m_torrent_file->end_piece())
+				return;
 
 			auto flags = disk_interface::sequential_access | disk_interface::volatile_read;
 
@@ -3804,18 +3793,17 @@ namespace {
 		TORRENT_ASSERT(!(pc.num_pieces == 0 && pc.last_piece == true));
 
 		// if we have 0 pieces, we can't have any pad blocks either
-		TORRENT_ASSERT(!(pc.num_pieces == 0 && pc.pad_blocks > 0));
+		TORRENT_ASSERT(!(pc.num_pieces == 0 && pc.pad_bytes > 0));
 
 		// if we have all pieces, we must also have the last one
 		TORRENT_ASSERT(!(pc.num_pieces == fs.num_pieces() && pc.last_piece == false));
-		int const block_size = std::min(default_block_size, fs.piece_length());
 
 		// every block should not be a pad block
-		TORRENT_ASSERT(pc.pad_blocks <= std::int64_t(pc.num_pieces) * fs.piece_length() / block_size);
+		TORRENT_ASSERT(pc.pad_bytes <= std::int64_t(pc.num_pieces) * fs.piece_length());
 
 		return std::int64_t(pc.num_pieces) * fs.piece_length()
 			- (pc.last_piece ? fs.piece_length() - fs.piece_size(fs.last_piece()) : 0)
-			- std::int64_t(pc.pad_blocks) * block_size;
+			- std::int64_t(pc.pad_bytes);
 	}
 
 	// fills in total_wanted, total_wanted_done and total_done
@@ -3826,34 +3814,32 @@ namespace {
 
 		st.total_done = 0;
 		st.total_wanted_done = 0;
-		st.total_wanted = m_torrent_file->total_size();
+		st.total_wanted = m_size_on_disk;
 
-		TORRENT_ASSERT(st.total_wanted >= m_padding_blocks * default_block_size);
+		TORRENT_ASSERT(st.total_wanted <= m_torrent_file->total_size());
 		TORRENT_ASSERT(st.total_wanted >= 0);
 
 		TORRENT_ASSERT(!valid_metadata() || m_torrent_file->num_pieces() > 0);
 		if (!valid_metadata()) return;
-
-		TORRENT_ASSERT(st.total_wanted >= std::int64_t(m_torrent_file->piece_length())
-			* (m_torrent_file->num_pieces() - 1));
 
 		if (m_seed_mode || is_seed())
 		{
 			// once we're a seed and remove the piece picker, we stop tracking
 			// piece- and file priority. We consider everything as being
 			// "wanted"
-			st.total_done = m_torrent_file->total_size()
-				- m_padding_blocks * default_block_size;
-			st.total_wanted_done = st.total_done;
-			st.total_wanted = st.total_done;
+			st.total_done = m_torrent_file->total_size() - m_padding_bytes;
+			st.total_wanted_done = m_size_on_disk;
+			st.total_wanted = m_size_on_disk;
+			TORRENT_ASSERT(st.total_wanted <= st.total_done);
+			TORRENT_ASSERT(st.total_wanted_done <= st.total_wanted);
+			TORRENT_ASSERT(st.total_done <= m_torrent_file->total_size());
 			return;
 		}
 		else if (!has_picker())
 		{
 			st.total_done = 0;
 			st.total_wanted_done = 0;
-			st.total_wanted = m_torrent_file->total_size()
-				- m_padding_blocks * default_block_size;
+			st.total_wanted = m_size_on_disk;
 			return;
 		}
 
@@ -3861,8 +3847,9 @@ namespace {
 
 		file_storage const& files = m_torrent_file->files();
 
-		st.total_wanted = calc_bytes(files, m_picker->want());
-		st.total_wanted_done = calc_bytes(files, m_picker->have_want());
+		st.total_wanted = std::min(m_size_on_disk, calc_bytes(files, m_picker->want()));
+		st.total_wanted_done = std::min(m_file_progress.total_on_disk()
+			, calc_bytes(files, m_picker->have_want()));
 		st.total_done = calc_bytes(files, m_picker->have());
 		st.total = calc_bytes(files, m_picker->all_pieces());
 
@@ -3893,16 +3880,18 @@ namespace {
 			if (m_picker->have_piece(index)) continue;
 
 			TORRENT_ASSERT(i->finished + i->writing <= m_picker->blocks_in_piece(index));
-			TORRENT_ASSERT(i->finished + i->writing >= m_picker->pad_blocks_in_piece(index));
 
-			int const blocks = i->finished + i->writing - m_picker->pad_blocks_in_piece(index);
-			TORRENT_ASSERT(blocks >= 0);
-
-			auto const additional_bytes = std::int64_t(blocks) * block_size();
+			auto const additional_bytes = std::int64_t(i->finished + i->writing
+				- m_picker->pad_bytes_in_piece(index) / block_size())
+				* block_size();
+			TORRENT_ASSERT(additional_bytes >= 0);
 			st.total_done += additional_bytes;
 			if (m_picker->piece_priority(index) > dont_download)
 				st.total_wanted_done += additional_bytes;
 		}
+
+		TORRENT_ASSERT(st.total_wanted_done >= 0);
+		TORRENT_ASSERT(st.total_done >= st.total_wanted_done);
 	}
 
 	void torrent::on_piece_verified(aux::vector<sha256_hash> block_hashes
@@ -4021,10 +4010,14 @@ namespace {
 			, settings().get_int(settings_pack::max_suggest_pieces));
 	}
 
-	// this is called once we have completely downloaded piece
-	// 'index', its hash has been verified. It's also called
-	// during initial file check when we find a piece whose hash
-	// is correct
+	// this is called when either:
+	// * we have completely downloaded piece 'index' and its hash has been verified.
+	// * during initial file check when we find a piece whose hash is correct
+	// * if there's a pad-file that extends over the entire piece
+	// this function does not update the piece picker, telling it we have the
+	// piece, it just does all the torrent-level accounting that needs to
+	// happen. It may not be called twice for the same piece (if it is,
+	// file_progress will assert)
 	void torrent::we_have(piece_index_t const index)
 	{
 		TORRENT_ASSERT(is_single_thread());
@@ -4158,19 +4151,17 @@ namespace {
 		TORRENT_ALLOCA(block_passed, bool, blocks_in_piece);
 		std::fill(block_passed.begin(), block_passed.end(), false);
 
+		set_block_hash_result last_result = set_block_hash_result(set_block_hash_result::result::unknown);
+
 		for (int i = 0; i < blocks_in_piece; ++i)
 		{
 			// if there was an enoent or eof error the block hashes array may be incomplete
 			// bail if we've hit the end of the valid hashes
-//#ifndef SIRIUS_DRIVE
-			if (block_hashes[i].is_all_zeros())
-			{
-				ret = false;
-				break;
-			}
-//#endif
+			if (block_hashes[i].is_all_zeros()) return false;
+
 			auto const result = get_hash_picker().set_block_hash(piece
 				, i * default_block_size, block_hashes[i]);
+			last_result = result;
 
 			if (result.status == set_block_hash_result::result::success)
 			{
@@ -4180,8 +4171,11 @@ namespace {
 				// all verified ranges should always be full pieces or less
 				TORRENT_ASSERT(result.first_verified_block >= 0
 					|| (result.first_verified_block % blocks_per_piece) == 0);
-				TORRENT_ASSERT(result.num_verified <= blocks_in_piece
+				TORRENT_ASSERT(result.num_verified <= blocks_per_piece
 					|| (result.num_verified % blocks_per_piece) == 0);
+
+				// note that result.num_verified may cover pad blocks too, and
+				// so may be > blocks_in_piece
 
 				// sometimes, completing a single block may "unlock" validating
 				// multiple pieces. e.g. if we don't have the piece layer yet,
@@ -4226,13 +4220,13 @@ namespace {
 			{
 				ret = false;
 			}
-			else if (result.status == set_block_hash_result::result::piece_hash_failed && i == blocks_in_piece - 1)
-			{
-				// only if the *last* block causes the piece to fail, do we know
-				// it actually failed. Otherwise it might have been failing
-				// because of other, previously existing block hashes.
-				ret = false;
-			}
+		}
+		if (last_result.status == set_block_hash_result::result::piece_hash_failed)
+		{
+			// only if the *last* block causes the piece to fail, do we know
+			// it actually failed. Otherwise it might have been failing
+			// because of other, previously existing block hashes.
+			ret = false;
 		}
 
 		if (boost::indeterminate(ret) && std::all_of(block_passed.begin(), block_passed.end()
@@ -4256,7 +4250,7 @@ namespace {
 
 #ifndef TORRENT_DISABLE_LOGGING
 		if (should_log())
-			debug_log("PIECE_PASSED (%d)", num_passed());
+			debug_log("PIECE_PASSED (%d)", int(index));
 #endif
 
 //		std::fprintf(stderr, "torrent::piece_passed piece:%d\n", index);
@@ -4387,34 +4381,6 @@ namespace {
 		}
 #endif
 
-		if (!torrent_file().info_hashes().has_v1() && blocks.empty())
-		{
-			// This is a v2 only torrent so we can definitely get block
-			// level hashes. Don't fail the piece yet, let it sit in the
-			// finished state and request block hashes.
-
-			// If this is a hybrid torrent we might be able to get block level
-			// hashes, but there is no guarantee that there is a v2 peer to
-			// request them from. For now be conservative and re-request
-			// the block without waiting for block hashes.
-
-			get_hash_picker().verify_block_hashes(index);
-			return;
-		}
-
-		// increase the total amount of failed bytes
-		if (blocks.empty())
-			add_failed_bytes(m_torrent_file->piece_size(index));
-		else
-			add_failed_bytes(static_cast<int>(blocks.size()) * default_block_size);
-
-#ifndef TORRENT_DISABLE_EXTENSIONS
-		for (auto& ext : m_extensions)
-		{
-			ext->on_piece_failed(index);
-		}
-#endif
-
 		std::vector<torrent_peer*> const downloaders = m_picker->get_downloaders(index);
 
 		// decrease the trust point of all peers that sent
@@ -4436,22 +4402,79 @@ namespace {
 			return ret;
 		}();
 
-#if TORRENT_USE_ASSERTS
-			for (auto const& p : downloaders)
+		// if this piece wasn't downloaded from peers, we just found it on disk.
+		// In that case, we should just consider it as "not-have" and there's no
+		// need to try to get higher fidelity hashes (yet)
+		bool const found_on_disk = peers.size() == 1 && peers.count(nullptr);
+
+		if (!torrent_file().info_hashes().has_v1() && blocks.empty() && !found_on_disk)
+		{
+			// TODO: only do this if the piece size > 1 blocks
+			// This is a v2 torrent so we can request get block
+			// level hashes.
+			verify_block_hashes(index);
+		}
+
+		// the below code is penalizing peers that sent use bad data.
+		// increase the total amount of failed bytes
+		if (!found_on_disk)
+		{
+			if (blocks.empty())
+				add_failed_bytes(m_torrent_file->piece_size(index));
+			else
+				add_failed_bytes(static_cast<int>(blocks.size()) * default_block_size);
+
+#ifndef TORRENT_DISABLE_EXTENSIONS
+			for (auto& ext : m_extensions)
 			{
-				if (p && p->connection)
-				{
-					auto* peer = static_cast<peer_connection*>(p->connection);
-					peer->piece_failed = true;
-				}
+				ext->on_piece_failed(index);
 			}
 #endif
 
-		// did we receive this piece from a single peer?
-		// if we know exactly which blocks failed the hash, we can also be certain
-		// that all peers in the list sent us bad data
-		bool const known_bad_peer = peers.size() == 1 || !blocks.empty();
+			// did we receive this piece from a single peer?
+			// if we know exactly which blocks failed the hash, we can also be certain
+			// that all peers in the list sent us bad data
+			bool const known_bad_peer = (!found_on_disk && peers.size() == 1) || !blocks.empty();
 
+			penalize_peers(peers, index, known_bad_peer);
+		}
+
+		// If m_storage isn't set here, it means we're shutting down
+		if (m_storage)
+		{
+			// it doesn't make much sense to fail to hash a piece
+			// without having a storage associated with the torrent.
+			// restoring the piece in the piece picker without calling
+			// clear piece on the disk thread will make them out of
+			// sync, and if we try to write more blocks to this piece
+			// the disk thread will barf, because it hasn't been cleared
+			TORRENT_ASSERT(m_storage);
+
+			// don't allow picking any blocks from this piece
+			// until we're done synchronizing with the disk threads.
+			m_picker->lock_piece(index);
+
+			// don't do this until after the plugins have had a chance
+			// to read back the blocks that failed, for blame purposes
+			// this way they have a chance to hit the cache
+			m_ses.disk_thread().async_clear_piece(m_storage, index
+				, [self = shared_from_this(), c = std::move(blocks)](piece_index_t const& p)
+				{ self->on_piece_sync(p, c); });
+			m_ses.deferred_submit_jobs();
+		}
+		else
+		{
+			TORRENT_ASSERT(m_abort);
+			// it doesn't really matter what we do
+			// here, since we're about to destruct the
+			// torrent anyway.
+			on_piece_sync(index, std::move(blocks));
+		}
+	}
+
+	void torrent::penalize_peers(std::set<torrent_peer*> const& peers
+		, piece_index_t const index, bool const known_bad_peer)
+	{
 		for (auto p : peers)
 		{
 			if (p == nullptr) continue;
@@ -4520,49 +4543,6 @@ namespace {
 				}
 			}
 		}
-
-		// If m_storage isn't set here, it means we're shutting down
-		if (m_storage)
-		{
-			// it doesn't make much sense to fail to hash a piece
-			// without having a storage associated with the torrent.
-			// restoring the piece in the piece picker without calling
-			// clear piece on the disk thread will make them out of
-			// sync, and if we try to write more blocks to this piece
-			// the disk thread will barf, because it hasn't been cleared
-			TORRENT_ASSERT(m_storage);
-
-			// don't allow picking any blocks from this piece
-			// until we're done synchronizing with the disk threads.
-			m_picker->lock_piece(index);
-
-			// don't do this until after the plugins have had a chance
-			// to read back the blocks that failed, for blame purposes
-			// this way they have a chance to hit the cache
-			m_ses.disk_thread().async_clear_piece(m_storage, index
-				, [self = shared_from_this(), c = std::move(blocks)](piece_index_t const& p)
-				{ self->on_piece_sync(p, c); });
-			m_ses.deferred_submit_jobs();
-		}
-		else
-		{
-			TORRENT_ASSERT(m_abort);
-			// it doesn't really matter what we do
-			// here, since we're about to destruct the
-			// torrent anyway.
-			on_piece_sync(index, std::move(blocks));
-		}
-
-#if TORRENT_USE_ASSERTS
-		for (auto const& p : downloaders)
-		{
-			if (p && p->connection)
-			{
-				auto* const peer = static_cast<peer_connection*>(p->connection);
-				peer->piece_failed = false;
-			}
-		}
-#endif
 	}
 
 	void torrent::peer_is_interesting(peer_connection& c)
@@ -6748,8 +6728,7 @@ namespace {
 	{
 		need_hash_picker();
 		if (!m_hash_picker) return true;
-		add_hashes_result result = m_hash_picker->add_hashes(req, hashes);
-		TORRENT_ASSERT(!(!result.hash_failed.empty() && result.valid));
+		add_hashes_result const result = m_hash_picker->add_hashes(req, hashes);
 		for (auto& p : result.hash_failed)
 		{
 			if (torrent_file().info_hashes().has_v1() && have_piece(p.first))
@@ -6764,7 +6743,7 @@ namespace {
 			// the piece may not have been downloaded in this session
 			// it should be open for downloading so nothing needs to be done here
 			if (!m_picker || !m_picker->is_downloading(p.first)) continue;
-			piece_failed(p.first, std::move(p.second));
+			piece_failed(p.first, p.second);
 		}
 		for (piece_index_t p : result.hash_passed)
 		{
@@ -6831,7 +6810,12 @@ namespace {
 				std::vector<char> out_layer;
 				out_layer.reserve(layer.size() * sha256_hash::size());
 				for (auto const& h : layer)
+				{
+					// we're missing a piece layer. We can't return a valid
+					// torrent
+					if (h.is_all_zeros()) return {};
 					out_layer.insert(out_layer.end(), h.data(), h.data() + sha256_hash::size());
+				}
 				v2_hashes.emplace_back(std::move(out_layer));
 			}
 			ret->set_piece_layers(std::move(v2_hashes));
@@ -7084,8 +7068,13 @@ namespace {
 
 		if (m_torrent_file->info_hashes().has_v2())
 		{
+			auto const num_files = m_merkle_trees.size();
 			ret.merkle_trees.clear();
-			ret.merkle_trees.reserve(m_merkle_trees.size());
+			ret.merkle_trees.reserve(num_files);
+			ret.merkle_tree_mask.clear();
+			ret.merkle_tree_mask.reserve(num_files);
+			ret.verified_leaf_hashes.clear();
+			ret.verified_leaf_hashes.reserve(num_files);
 			for (auto const& t : m_merkle_trees)
 			{
 				// use stuctured binding in C++17
@@ -7094,17 +7083,10 @@ namespace {
 				std::tie(sparse_tree, mask) = t.build_sparse_vector();
 				ret.merkle_trees.emplace_back(std::move(sparse_tree));
 				ret.merkle_tree_mask.emplace_back(std::move(mask));
+				ret.verified_leaf_hashes.emplace_back(t.verified_leafs());
 			}
 
-			if (has_hash_picker())
-			{
-				auto const& leafs = get_hash_picker().verified_leafs();
-				ret.verified_leaf_hashes.clear();
-				ret.verified_leaf_hashes.reserve(leafs.size());
-				for (auto const& l : leafs)
-					ret.verified_leaf_hashes.emplace_back(l);
-			}
-			else if (!m_have_all)
+			if (!has_hash_picker() && !m_have_all)
 			{
 				ret.verified_leaf_hashes.reserve(m_torrent_file->files().num_files());
 				for (file_index_t f(0); f != m_torrent_file->files().end_file(); ++f)
@@ -7474,9 +7456,9 @@ namespace {
 		return peerinfo->connection != nullptr;
 	}
 
-	void torrent::initialize_merkle_trees()
+	error_code torrent::initialize_merkle_trees()
 	{
-		if (!info_hash().has_v2()) return;
+		if (!info_hash().has_v2()) return {};
 
 		bool valid = m_torrent_file->v2_piece_hashes_verified();
 
@@ -7500,16 +7482,16 @@ namespace {
 
 			if (!m_merkle_trees[i].load_piece_layer(piece_layer))
 			{
-				set_error(errors::torrent_invalid_piece_layer
-					, torrent_status::error_file_metadata);
-				valid = false;
 				m_merkle_trees[i] = aux::merkle_tree();
+				m_v2_piece_layers_validated = false;
+				return errors::torrent_invalid_piece_layer;
 			}
 		}
 
 		m_v2_piece_layers_validated = valid;
 
 		m_torrent_file->free_piece_layers();
+		return {};
 	}
 
 	bool torrent::set_metadata(span<char const> metadata_buf)
@@ -7564,7 +7546,10 @@ namespace {
 		info_hash_t const old_ih = m_torrent_file->info_hashes();
 
 		error_code ec;
-		bdecode_node const metadata = bdecode(metadata_buf, ec);
+		int pos = 0;
+		bdecode_node const metadata = bdecode(metadata_buf, ec, &pos, 200
+			, settings().get_int(settings_pack::metadata_token_limit));
+
 		if (ec || !m_torrent_file->parse_info_section(metadata, ec
 			, settings().get_int(settings_pack::max_piece_count)))
 		{
@@ -7599,9 +7584,17 @@ namespace {
 
 		m_info_hash = m_torrent_file->info_hashes();
 
+		m_size_on_disk = aux::size_on_disk(m_torrent_file->files());
+
 		m_ses.update_torrent_info_hash(shared_from_this(), old_ih);
 
-		initialize_merkle_trees();
+		ec = initialize_merkle_trees();
+		if (ec)
+		{
+			set_error(ec, torrent_status::error_file_metadata);
+			pause();
+			return false;
+		}
 
 		update_gauge();
 		update_want_tick();
@@ -8192,7 +8185,7 @@ namespace {
 			{
 				TORRENT_INCREMENT(m_iterating_connections);
 				TORRENT_ASSERT(p->associated_torrent().lock().get() == this);
-				if (p->upload_only())
+				if (p->upload_only() && p->can_disconnect(errors::torrent_finished))
 				{
 #ifndef TORRENT_DISABLE_LOGGING
 					p->peer_log(peer_log_alert::info, "SEED", "CLOSING CONNECTION");
@@ -9193,7 +9186,11 @@ namespace {
 		int seeds = 0;
 		int downloaders = 0;
 
-		if (m_complete != 0xffffff) seeds = m_complete;
+		// If we're currently seeding and using tracker supplied scrape
+		// data, we should remove ourselves from the seed count
+		int const self_seed = is_seed() && !is_paused() ? 1 : 0;
+
+		if (m_complete != 0xffffff) seeds = std::max(0, int(m_complete) - self_seed);
 		else seeds = m_peer_list ? m_peer_list->num_seeds() : 0;
 
 		if (m_incomplete != 0xffffff) downloaders = m_incomplete;
@@ -9315,7 +9312,7 @@ namespace {
 		set_paused(true, flags | torrent_handle::clear_disk_cache);
 	}
 
-	void torrent::do_pause(pause_flags_t const flags)
+	void torrent::do_pause(pause_flags_t const flags, bool const was_paused)
 	{
 		TORRENT_ASSERT(is_single_thread());
 		if (!is_paused()) return;
@@ -9344,16 +9341,22 @@ namespace {
 		update_state_list();
 		update_want_tick();
 
-		const time_point now = aux::time_now();
+		// do_paused() may be called twice, if the first time is to enter
+		// graceful pause, and the second time proper pause. We can only update
+		// these timers once, otherwise they'll be inflated
+		if (!was_paused)
+		{
+			const time_point now = aux::time_now();
 
-		m_active_time +=
-			duration_cast<seconds32>(now - m_started);
+			m_active_time +=
+				duration_cast<seconds32>(now - m_started);
 
-		if (is_seed()) m_seeding_time +=
-			duration_cast<seconds32>(now - m_became_seed);
+			if (is_seed()) m_seeding_time +=
+				duration_cast<seconds32>(now - m_became_seed);
 
-		if (is_finished()) m_finished_time +=
-			duration_cast<seconds32>(now - m_became_finished);
+			if (is_finished()) m_finished_time +=
+				duration_cast<seconds32>(now - m_became_finished);
+		}
 
 		m_announce_to_dht = false;
 		m_announce_to_trackers = false;
@@ -9519,7 +9522,7 @@ namespace {
 			{
 				m_graceful_pause_mode = false;
 				update_gauge();
-				do_pause();
+				do_pause(flags, true);
 			}
 			return;
 		}
@@ -9534,7 +9537,7 @@ namespace {
 
 		m_graceful_pause_mode = bool(flags & torrent_handle::graceful_pause);
 
-		if (b) do_pause(flags & torrent_handle::clear_disk_cache);
+		if (b) do_pause(flags);
 		else do_resume();
 	}
 
@@ -9852,7 +9855,7 @@ namespace {
 
 	seconds32 torrent::active_time() const
 	{
-		if(is_paused())
+		if (is_paused())
 			return m_active_time;
 
 		// m_active_time does not account for the current "session", just the
@@ -10887,7 +10890,6 @@ namespace {
 	torrent_state torrent::get_peer_list_state()
 	{
 		torrent_state ret;
-		ret.is_paused = is_paused();
 		ret.is_finished = is_finished();
 		ret.allow_multiple_connections_per_ip = settings().get_bool(settings_pack::allow_multiple_connections_per_ip);
 		ret.max_peerlist_size = is_paused()
@@ -11041,7 +11043,7 @@ namespace {
 
 	void torrent::set_seed(torrent_peer* p, bool const s)
 	{
-		if (p->seed == s) return;
+		if (bool(p->seed) == s) return;
 		if (s)
 		{
 			TORRENT_ASSERT(m_num_seeds < 0xffff);
@@ -11241,7 +11243,8 @@ namespace {
 		if (flags & torrent_handle::piece_granularity)
 			return;
 
-		TORRENT_ASSERT(has_picker());
+		if (!has_picker())
+			return;
 
 		std::vector<piece_picker::downloading_piece> q = m_picker->get_download_queue();
 

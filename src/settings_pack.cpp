@@ -106,6 +106,12 @@ namespace libtorrent {
 #define DEPRECATED_SET_STR(name, default_value, fun) { "", nullptr, nullptr }
 #endif
 
+#ifdef TORRENT_WINDOWS
+constexpr int CLOSE_FILE_INTERVAL = 240;
+#else
+constexpr int CLOSE_FILE_INTERVAL = 0;
+#endif
+
 		// tested to fail with _MSC_VER <= 1916. The actual version condition
 #if !defined _MSC_VER
 #define CONSTEXPR_SETTINGS constexpr
@@ -132,7 +138,7 @@ namespace libtorrent {
 		SET(proxy_username, "", &session_impl::update_proxy),
 		SET(proxy_password, "", &session_impl::update_proxy),
 		SET(i2p_hostname, "", &session_impl::update_i2p_bridge),
-		SET(peer_fingerprint, "-LT2030-", nullptr),
+		SET(peer_fingerprint, "-LT2040-", nullptr),
 #ifndef SIRIUS_DRIVE
 		SET(dht_bootstrap_nodes, "dht.libtorrent.org:25401", &session_impl::update_dht_bootstrap_nodes)
 #endif
@@ -224,6 +230,7 @@ namespace libtorrent {
 		SET(ssrf_mitigation, true, nullptr),
 		SET(allow_idna, false, nullptr),
 		SET(enable_set_file_valid_data, false, nullptr),
+		SET(socks5_udp_send_local_ep, false, nullptr),
 	}});
 
 	CONSTEXPR_SETTINGS
@@ -359,7 +366,7 @@ namespace libtorrent {
 		DEPRECATED_SET(cache_size_volatile, 256, nullptr),
 		SET(urlseed_max_request_bytes, 16 * 1024 * 1024, nullptr),
 		SET(web_seed_name_lookup_retry, 1800, nullptr),
-		SET(close_file_interval, 0, nullptr),
+		SET(close_file_interval, CLOSE_FILE_INTERVAL, nullptr),
 		SET(utp_cwnd_reduce_timer, 100, nullptr),
 		SET(max_web_seed_connections, 3, nullptr),
 		SET(resolver_cache_timeout, 1200, &session_impl::update_resolver_cache_timeout),
@@ -380,6 +387,7 @@ namespace libtorrent {
 		SET(dht_sample_infohashes_interval, 21600, nullptr),
 		SET(dht_max_infohashes_sample_count, 20, nullptr),
 		SET(max_piece_count, 0x200000, nullptr),
+		SET(metadata_token_limit, 2500000, nullptr),
 	}});
 
 #undef SET

@@ -34,6 +34,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/aux_/merkle.hpp"
 #include "libtorrent/aux_/vector.hpp"
+#include "libtorrent/bitfield.hpp"
 
 namespace libtorrent {
 
@@ -73,10 +74,16 @@ namespace libtorrent {
 		return tree_node * 2 + 1;
 	}
 
+	int merkle_get_first_child(int const tree_node, int depth)
+	{
+		return ((tree_node + 1) << depth) - 1;
+	}
+
 	int merkle_num_nodes(int const leafs)
 	{
 		TORRENT_ASSERT(leafs > 0);
 		TORRENT_ASSERT(leafs <= (std::numeric_limits<int>::max() / 2) + 1);
+		TORRENT_ASSERT((leafs & (leafs - 1)) == 0);
 		// This is a way to calculate: (leafs << 1) - 1 without requiring an extra
 		// bit in the far left. The first 1 we subtract is worth 2 after we
 		// multiply by 2, so by just adding back one, we have effectively
@@ -306,39 +313,46 @@ namespace libtorrent {
 		return ret;
 	}
 
-	std::pair<aux::vector<std::pair<sha256_hash, sha256_hash>>, sha256_hash>
-	merkle_check_proofs(sha256_hash hash, span<sha256_hash const> hashes
-		, int index)
+	bool merkle_validate_and_insert_proofs(span<sha256_hash> target_tree
+		, int const target_node_idx, sha256_hash const& node, span<sha256_hash const> uncle_hashes)
 	{
-		aux::vector<std::pair<sha256_hash, sha256_hash>> ret(int(hashes.size()));
-		auto ret_it = ret.begin();
-		for (auto const& proof : hashes)
-		{
-			bool const proof_right = (index & 1) == 0;
-			ret_it->first = proof_right ? hash : proof;
-			ret_it->second = proof_right ? proof : hash;
-			hash = hasher256().update(ret_it->first).update(ret_it->second).final();
-			++ret_it;
-			index /= 2;
-		}
-		TORRENT_ASSERT(ret_it == ret.end());
-		return {std::move(ret), hash};
-	}
+		if (target_tree[target_node_idx] == node)
+			return true;
 
-	bool merkle_validate_proofs(int start_idx
-		, span<std::pair<sha256_hash, sha256_hash> const> proofs)
-	{
-		if (proofs.empty()) return true;
-		sha256_hash parent_hash = (start_idx & 1)
-			? proofs.front().first : proofs.front().second;
-		for (auto proof : proofs)
+		if (!target_tree[target_node_idx].is_all_zeros())
+			return false;
+
+		if (uncle_hashes.empty())
+			return false;
+
+		int cursor = target_node_idx;
+		target_tree[cursor] = node;
+		for (auto const& proof : uncle_hashes)
 		{
-			if (parent_hash != ((start_idx & 1) ? proof.first : proof.second))
-				return false;
-			parent_hash = hasher256().update(proof.first).update(proof.second).final();
-			start_idx = merkle_get_parent(start_idx);
+			int const proof_idx = merkle_get_sibling(cursor);
+			TORRENT_ASSERT(target_tree[proof_idx].is_all_zeros());
+			target_tree[proof_idx] = proof;
+			int const left = std::min(proof_idx, cursor);
+			auto const hash = hasher256().update(target_tree[left]).update(target_tree[left + 1]).final();
+			cursor = merkle_get_parent(cursor);
+			if (target_tree[cursor] == hash) return true;
+			if (!target_tree[cursor].is_all_zeros())
+				break;
+			target_tree[cursor] = hash;
 		}
-		return true;
+
+		// we get here if we never reached a known hash in the tree, i.e. the
+		// uncle_hashes failed to prove the specified node hash.
+		// we now need to clear up all the hashes we've inserted into the tree
+		int clear_cursor = target_node_idx;
+		while (clear_cursor > cursor)
+		{
+			int const proof_idx = merkle_get_sibling(clear_cursor);
+			target_tree[clear_cursor].clear();
+			target_tree[proof_idx].clear();
+			clear_cursor = merkle_get_parent(clear_cursor);
+		}
+		return false;
 	}
 
 	bool merkle_validate_node(sha256_hash const& left, sha256_hash const& right
@@ -351,14 +365,16 @@ namespace libtorrent {
 	}
 
 	void merkle_validate_copy(span<sha256_hash const> const src
-		, span<sha256_hash> const dst, sha256_hash const& root)
+		, span<sha256_hash> const dst, sha256_hash const& root
+		, bitfield& verified_leafs)
 	{
 		TORRENT_ASSERT(src.size() == dst.size());
 		int const num_leafs = int((dst.size() + 1) / 2);
 		if (src.empty()) return;
 		if (src[0] != root) return;
 		dst[0] = src[0];
-		for (int i = 0; i < src.size() - num_leafs; ++i)
+		int const leaf_layer_start = int(src.size() - num_leafs);
+		for (int i = 0; i < leaf_layer_start; ++i)
 		{
 			if (dst[i].is_all_zeros()) continue;
 			int const left_child = merkle_get_first_child(i);
@@ -367,6 +383,16 @@ namespace libtorrent {
 			{
 				dst[left_child] = src[left_child];
 				dst[right_child] = src[right_child];
+				int const block_idx = left_child - leaf_layer_start;
+				if (left_child >= leaf_layer_start
+					&& block_idx < verified_leafs.size())
+				{
+					verified_leafs.set_bit(block_idx);
+					// the right child may be the first block of padding hash,
+					// in which case it's not part of the verified bitfield
+					if (block_idx + 1 < verified_leafs.size())
+						verified_leafs.set_bit(block_idx + 1);
+				}
 			}
 		}
 	}
@@ -424,6 +450,5 @@ namespace libtorrent {
 
 		return std::make_tuple(leafs_start, leafs_size, root_index);
 	}
-
 }
 

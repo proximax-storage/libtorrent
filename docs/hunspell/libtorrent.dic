@@ -288,7 +288,6 @@ Wallin
 Reimond
 Retz
 BEP5
-librt
 toolset
 Wojciechowski
 GTK
@@ -515,6 +514,7 @@ SNDBUFFER
 RCVBUF
 QBSS
 DDoS
+DoS
 anonymization
 Tribler
 gzipped
@@ -551,7 +551,7 @@ cpp
 tos
 BP
 qB
-LT2030
+LT2040
 iocontrol
 getname
 getpeername

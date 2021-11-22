@@ -988,6 +988,17 @@ namespace aux {
 			// previously deleted information from the disk.
 			enable_set_file_valid_data,
 
+			// When using a SOCKS5 proxy, UDP traffic is routed through the
+			// proxy by sending a UDP ASSOCIATE command. If this option is true,
+			// the UDP ASSOCIATE command will include the IP address and
+			// listen port to the local UDP socket. This indicates to the proxy
+			// which source endpoint to expect our packets from. The benefit is
+			// that incoming packets can be forwarded correctly, before any
+			// outgoing packets are sent. The risk is that if there's a NAT
+			// between the client and the proxy, the IP address specified in the
+			// protocol may not be valid from the proxy's point of view.
+			socks5_udp_send_local_ep,
+
 			max_bool_setting_internal
 		};
 
@@ -1885,7 +1896,7 @@ namespace aux {
 			// periodically close files to trigger the operating system flushing
 			// disk cache. Specifically it has been observed to be required on
 			// windows to not have the disk cache grow indefinitely.
-			// This defaults to 120 seconds on windows, and disabled on other
+			// This defaults to 240 seconds on windows, and disabled on other
 			// systems.
 			close_file_interval,
 
@@ -1989,6 +2000,12 @@ namespace aux {
 			// a higher limit to read_resume_data() and
 			// torrent_info::parse_info_section(), if those are used.
 			max_piece_count,
+
+			// when receiving metadata (torrent file) from peers, this is the
+			// max number of bencoded tokens we're willing to parse. This limit
+			// is meant to prevent DoS attacks on peers. For very large
+			// torrents, this limit may have to be raised.
+			metadata_token_limit,
 
 			max_int_setting_internal
 		};
