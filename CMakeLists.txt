@@ -668,7 +668,6 @@ endif()
 
 # check if we need to link with libatomic (not needed on MSVC)
 if (NOT Windows)
-    if (NOT APPLE)
 	# TODO: migrate to CheckSourceCompiles in CMake >= 3.19
 	include(CheckCXXSourceCompiles)
 
@@ -800,7 +799,7 @@ if (NOT GNUTLS_FOUND AND NOT TARGET OpenSSL::SSL)
 endif()
 
 if (encryption)
-	target_sources(torrent-sirius PRIVATE src/pe_crypto.hpp src/pe_crypto.cpp)
+	target_sources(torrent-sirius PRIVATE include/libtorrent/pe_crypto.hpp src/pe_crypto.cpp)
 else()
 	target_compile_definitions(torrent-sirius PUBLIC TORRENT_DISABLE_ENCRYPTION)
 endif()
