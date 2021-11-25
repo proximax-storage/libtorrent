@@ -647,6 +647,8 @@ if (ANDROID)
 endif()
 
 if (APPLE)
+	set(CMAKE_CXX_FLAGS "-std=c++20 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX12.0.sdk ${CMAKE_CXX_FLAGS}")
+
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT_DIR} /usr/local/Cellar/openssl@1.1/1.1.1i/)
     set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libcrypto.dylib CACHE FILEPATH "" FORCE)
     set(OPENSSL_SSL_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libssl.dylib CACHE FILEPATH "" FORCE)

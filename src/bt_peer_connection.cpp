@@ -820,7 +820,10 @@ namespace {
         else if ( torrent->m_siriusFlags & sf_is_replicator )
         {
             // our peer is replicator
-            std::memset(ptr, 0xff, 32);
+            if ( torrent->m_transactionHash )
+                std::memcpy(ptr, torrent->m_transactionHash.value().data(), 32);
+            else
+                std::memset(ptr, 0xff, 32);
         }
         else
         {
