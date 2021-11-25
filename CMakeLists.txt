@@ -478,6 +478,10 @@ set(try_signal_sources
 	signal_error_code.cpp
 )
 
+set(sirius_drive
+	session_delegate
+)
+
 list(TRANSFORM sources PREPEND "src/")
 list(TRANSFORM kademlia_sources PREPEND "src/kademlia/")
 list(TRANSFORM ed25519_sources PREPEND "src/ed25519/")
@@ -486,6 +490,7 @@ list(TRANSFORM libtorrent_extensions_include_files PREPEND "include/libtorrent/e
 list(TRANSFORM libtorrent_aux_include_files PREPEND "include/libtorrent/aux_/")
 list(TRANSFORM libtorrent_kademlia_include_files PREPEND "include/libtorrent/kademlia/")
 list(TRANSFORM try_signal_sources PREPEND "deps/try_signal/")
+list(TRANSFORM sirius_drive PREPEND "include/sirius_drive/")
 
 # these options control target creation and thus have to be declared before the add_library() call
 feature_option(BUILD_SHARED_LIBS "build libtorrent as a shared library" ON)
@@ -565,6 +570,7 @@ add_library(torrent-sirius
 	${libtorrent_include_files}
 	${libtorrent_extensions_include_files}
 	${libtorrent_aux_include_files}
+	${sirius_drive}
 )
 
 # C++ 14 support is required
@@ -909,6 +915,7 @@ install(TARGETS torrent-sirius EXPORT LibtorrentRasterbarTargets
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/libtorrent DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h*")
+install(DIRECTORY include/sirius_drive DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h*")
 
 # === generate a CMake Config File ===
 include(CMakePackageConfigHelpers)
