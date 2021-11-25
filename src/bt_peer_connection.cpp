@@ -1137,9 +1137,20 @@ namespace {
                 assert(0);
             }
             
-            delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
-                                              m_peer_public_key,    // receiver public key
-                                              r.length );
+            if ( !delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
+                                                    m_peer_public_key,    // receiver public key
+                                                    r.length ) )
+            {
+                std::cerr << "Piece request refused: " << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
+                            << " from: "  << (int)m_peer_public_key[0]
+                            << " hash: "  << (int)m_transactionHash[0]
+                            << " flags: " << torrent->m_siriusFlags
+                            << std::endl << std::flush;
+                disconnect( errors::reserved, operation_t::unknown, peer_error );
+                return;
+
+            }
+            
             // check receipt limit
             if ( !m_isDownloadUnlimited && !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
             {
@@ -1154,6 +1165,7 @@ namespace {
 
                 //todo log?
                 //todo disconnect?
+                disconnect( errors::reserved, operation_t::unknown, peer_error );
                 return;
             }
 
