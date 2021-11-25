@@ -1141,7 +1141,7 @@ namespace {
                                                     m_peer_public_key,    // receiver public key
                                                     r.length ) )
             {
-                std::cerr << "Piece request refused: " << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
+                std::cerr << "Piece request refused: " << is_outgoing() << ": " << delegate->dbgOurPeerName()
                             << " from: "  << (int)m_peer_public_key[0]
                             << " hash: "  << (int)m_transactionHash[0]
                             << " flags: " << torrent->m_siriusFlags
