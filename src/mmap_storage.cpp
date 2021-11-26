@@ -663,6 +663,10 @@ namespace libtorrent {
 				ret += static_cast<int>(buf.size());
 			}
 
+#if TORRENT_HAVE_MAP_VIEW_OF_FILE
+			m_pool.record_file_write(storage_index(), file_index, ret);
+#endif
+
 			// set this unconditionally in case the upper layer would like to treat
 			// short reads as errors
 			ec.operation = operation_t::file_write;
@@ -808,6 +812,12 @@ namespace libtorrent {
 			// its final size
 			mode |= (m_file_created[file] == false) ? aux::open_mode::truncate : aux::open_mode::read_only;
 		}
+
+		if (files().file_flags(file) & file_storage::flag_executable)
+			mode |= aux::open_mode::executable;
+
+		if (files().file_flags(file) & file_storage::flag_hidden)
+			mode |= aux::open_mode::hidden;
 
 #ifdef _WIN32
 		if (sett.get_bool(settings_pack::enable_set_file_valid_data))

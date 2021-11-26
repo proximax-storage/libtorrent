@@ -192,6 +192,11 @@ namespace
 #if TORRENT_ABI_VERSION <= 2
 		if (flags & lt::session::add_default_plugins)
 		{
+			// TODO: this can't really be removed until there is a way to
+			// control plugins by exposing session_params.
+			// The simplest solution would probably be to make the default
+			// plugins not be plugins, but just bake in support for them
+//			python_deprecated("add_default_plugins flag is deprecated");
 #endif
 			session_params params(std::move(p));
 			return std::make_shared<lt::session>(std::move(params), flags);
@@ -296,6 +301,10 @@ namespace
                     p.info_hashes = info_hash_t(sha256_hash(
                             bytes(extract<bytes>(value)).arr.data()));
                 }
+                else
+                {
+                    p.info_hashes = boost::python::extract<info_hash_t>(value);
+                }
                 continue;
             }
             else if(key == "name")
@@ -311,6 +320,7 @@ namespace
 #if TORRENT_ABI_VERSION == 1
             else if(key == "resume_data")
             {
+                python_deprecated("the resume_data member is deprecated");
                 std::string resume = extract<std::string>(value);
                 p.resume_data.assign(resume.begin(), resume.end());
                 continue;
@@ -366,6 +376,7 @@ namespace
 #if TORRENT_ABI_VERSION == 1
             else if(key == "url")
             {
+                python_deprecated("the url member is deprecated");
                 p.url = extract<std::string>(value);
                 continue;
             }
@@ -577,6 +588,7 @@ namespace
 #if TORRENT_ABI_VERSION == 1
     dict get_utp_stats(session_status const& st)
     {
+        python_deprecated("session_status is deprecated");
         dict ret;
         ret["num_idle"] = st.utp_stats.num_idle;
         ret["num_syn_sent"] = st.utp_stats.num_syn_sent;
@@ -761,6 +773,62 @@ namespace
 		return ret;
 	}
 
+    session_params read_session_params_entry(dict e
+        , save_state_flags_t flags)
+    {
+        entry ent = extract<entry>(e);
+        std::vector<char> buf;
+        bencode(std::back_inserter(buf), ent);
+        return lt::read_session_params(buf, flags);
+    }
+
+    session_params read_session_params_buffer(bytes const& bytes
+        , save_state_flags_t flags)
+    {
+        return lt::read_session_params(bytes.arr, flags);
+    }
+
+    bytes write_session_params_bytes(session_params const& sp
+        , save_state_flags_t flags)
+    {
+        auto buf = write_session_params_buf(sp, flags);
+        return bytes(buf.data(), buf.size());
+    }
+
+    struct dict_to_settings
+    {
+        dict_to_settings()
+        {
+            converter::registry::push_back(
+                &convertible, &construct, type_id<settings_pack>()
+            );
+        }
+
+        static void* convertible(PyObject* x)
+        {
+            return PyDict_Check(x) ? x: nullptr;
+        }
+
+        static void construct(PyObject* x, converter::rvalue_from_python_stage1_data* data)
+        {
+            void* storage = ((converter::rvalue_from_python_storage<lt::settings_pack>*)data)->storage.bytes;
+
+            dict o(borrowed(x));
+            auto p = new (storage) lt::settings_pack;
+            data->convertible = p;
+            make_settings_pack(*p, o);
+        }
+    };
+
+    struct settings_to_dict
+    {
+        static PyObject* convert(lt::settings_pack const& p)
+        {
+            dict ret = make_dict(p);
+            return incref(ret.ptr());
+        }
+    };
+
 } // anonymous namespace
 
 struct dummy1 {};
@@ -773,6 +841,9 @@ struct dummy11 {};
 
 void bind_session()
 {
+    dict_to_settings();
+    to_python_converter<lt::settings_pack, settings_to_dict>();
+
 #ifndef TORRENT_DISABLE_DHT
     void (lt::session::*dht_get_immutable_item)(sha1_hash const&) = &lt::session::dht_get_item;
     sha1_hash (lt::session::*dht_put_immutable_item)(entry data) = &lt::session::dht_put_item;
@@ -833,7 +904,7 @@ void bind_session()
         .def_readonly("dht_node_cache", &session_status::dht_node_cache)
         .def_readonly("dht_torrents", &session_status::dht_torrents)
         .def_readonly("dht_global_nodes", &session_status::dht_global_nodes)
-        .def_readonly("active_requests", &session_status::active_requests)
+        .add_property("active_requests", make_getter(&session_status::active_requests, return_value_policy<return_by_value>()))
         .def_readonly("dht_total_allocations", &session_status::dht_total_allocations)
 #endif // TORRENT_DISABLE_DHT
         .add_property("utp_stats", &get_utp_stats)
@@ -906,6 +977,33 @@ void bind_session()
         .add_property("resume_data", PROP(&add_torrent_params::resume_data))
 #endif
       ;
+
+#ifndef TORRENT_DISABLE_DHT
+    class_<lt::dht::dht_state>("dht_state")
+        .add_property("nids", &lt::dht::dht_state::nids)
+        .add_property("nodes", &lt::dht::dht_state::nodes)
+        .add_property("nodes6", &lt::dht::dht_state::nodes6)
+        ;
+#endif
+
+    class_<session_params>("session_params")
+        .def(init<settings_pack const&>())
+        .def(init<>())
+        // TODO: since there's not binding for settings_pack, but they are just
+        // represented as dicts, this won't return a reference, but a copy of
+        // the settings
+        .add_property("settings", PROP(&session_params::settings))
+#ifndef TORRENT_DISABLE_DHT
+        .def_readwrite("dht_state", &session_params::dht_state)
+#endif
+        .add_property("ext_state", PROP(&session_params::ext_state))
+        .def_readwrite("ip_filter", &session_params::ip_filter)
+        ;
+
+    def("read_session_params", &read_session_params_entry, (arg("dict"), arg("flags")=save_state_flags_t::all()));
+    def("read_session_params", &read_session_params_buffer, (arg("buffer"), arg("flags")=save_state_flags_t::all()));
+    def("write_session_params", &lt::write_session_params, (arg("entry"), arg("flags")=save_state_flags_t::all()));
+    def("write_session_params_buf", &write_session_params_bytes, (arg("buffer"), arg("flags")=save_state_flags_t::all()));
 
     enum_<storage_mode_t>("storage_mode_t")
         .value("storage_mode_allocate", storage_mode_allocate)
@@ -1013,6 +1111,8 @@ void bind_session()
 
     {
     scope s = class_<lt::session, boost::noncopyable>("session", no_init)
+        .def(init<lt::session_params>())
+        .def(init<>())
         .def("__init__", boost::python::make_constructor(&make_session
                 , default_call_policies()
                 , (arg("settings"), arg("flags")=
@@ -1030,7 +1130,7 @@ void bind_session()
                 , arg("flags")=lt::session::start_default_features | lt::session::add_default_plugins
                 , arg("alert_mask")=alert::error_notification))
         )
-        .def("outgoing_ports", &outgoing_ports)
+        .def("outgoing_ports", depr(&outgoing_ports))
 #endif
         .def("post_torrent_updates", allow_threads(&lt::session::post_torrent_updates), arg("flags") = 0xffffffff)
         .def("post_dht_stats", allow_threads(&lt::session::post_dht_stats))
@@ -1041,7 +1141,7 @@ void bind_session()
         .def("add_dht_node", &add_dht_node)
 #if TORRENT_ABI_VERSION == 1
         .def(
-            "add_dht_router", &add_dht_router
+            "add_dht_router", depr(&add_dht_router)
           , (arg("router"), "port")
         )
 #endif // TORRENT_ABI_VERSION
@@ -1066,7 +1166,7 @@ void bind_session()
 #ifndef BOOST_NO_EXCEPTIONS
 #if TORRENT_ABI_VERSION == 1
         .def(
-            "add_torrent", &add_torrent_depr
+            "add_torrent", depr(&add_torrent_depr)
           , (
                 arg("resume_data") = entry(),
                 arg("storage_mode") = storage_mode_sparse,
@@ -1077,14 +1177,14 @@ void bind_session()
 #endif // BOOST_NO_EXCEPTIONS
         .def("remove_torrent", allow_threads(&lt::session::remove_torrent), arg("option") = 0)
 #if TORRENT_ABI_VERSION == 1
-        .def("status", allow_threads(&lt::session::status))
+        .def("status", depr(&lt::session::status))
 #endif
         .def("get_settings", &session_get_settings)
         .def("apply_settings", &session_apply_settings)
 #if TORRENT_ABI_VERSION == 1
 #ifndef TORRENT_DISABLE_ENCRYPTION
-        .def("set_pe_settings", allow_threads(&lt::session::set_pe_settings))
-        .def("get_pe_settings", allow_threads(&lt::session::get_pe_settings))
+        .def("set_pe_settings", depr(&lt::session::set_pe_settings))
+        .def("get_pe_settings", depr(&lt::session::get_pe_settings))
 #endif
 #endif
         .def("load_state", &load_state, (arg("entry"), arg("flags") = 0xffffffff))
@@ -1096,8 +1196,8 @@ void bind_session()
         .def("add_extension", &add_extension)
 #if TORRENT_ABI_VERSION == 1
 #if TORRENT_USE_I2P
-        .def("set_i2p_proxy", allow_threads(&lt::session::set_i2p_proxy))
-        .def("i2p_proxy", allow_threads(&lt::session::i2p_proxy))
+        .def("set_i2p_proxy", depr(&lt::session::set_i2p_proxy))
+        .def("i2p_proxy", depr(&lt::session::i2p_proxy))
 #endif
 #endif
         .def("set_ip_filter", allow_threads(&lt::session::set_ip_filter))
@@ -1120,49 +1220,49 @@ void bind_session()
         .def("set_peer_class", &set_peer_class)
 
 #if TORRENT_ABI_VERSION == 1
-        .def("id", allow_threads(&lt::session::id))
+        .def("id", depr(&lt::session::id))
         .def(
-            "listen_on", &listen_on
+            "listen_on", depr(&listen_on)
           , (arg("min"), "max", arg("interface") = (char const*)nullptr, arg("flags") = 0)
         )
 #ifndef TORRENT_DISABLE_DHT
-        .def("start_dht", allow_threads(start_dht0))
-        .def("stop_dht", allow_threads(&lt::session::stop_dht))
-        .def("start_dht", allow_threads(start_dht1))
-        .def("dht_state", allow_threads(&lt::session::dht_state))
-        .def("set_dht_proxy", allow_threads(&lt::session::set_dht_proxy))
-        .def("dht_proxy", allow_threads(&lt::session::dht_proxy))
+        .def("start_dht", depr(start_dht0))
+        .def("stop_dht", depr(&lt::session::stop_dht))
+        .def("start_dht", depr(start_dht1))
+        .def("dht_state", depr(&lt::session::dht_state))
+        .def("set_dht_proxy", depr(&lt::session::set_dht_proxy))
+        .def("dht_proxy", depr(&lt::session::dht_proxy))
 #endif
-        .def("set_local_download_rate_limit", allow_threads(&lt::session::set_local_download_rate_limit))
-        .def("local_download_rate_limit", allow_threads(&lt::session::local_download_rate_limit))
-        .def("set_local_upload_rate_limit", allow_threads(&lt::session::set_local_upload_rate_limit))
-        .def("local_upload_rate_limit", allow_threads(&lt::session::local_upload_rate_limit))
-        .def("set_download_rate_limit", allow_threads(&lt::session::set_download_rate_limit))
-        .def("download_rate_limit", allow_threads(&lt::session::download_rate_limit))
-        .def("set_upload_rate_limit", allow_threads(&lt::session::set_upload_rate_limit))
-        .def("upload_rate_limit", allow_threads(&lt::session::upload_rate_limit))
-        .def("set_max_uploads", allow_threads(&lt::session::set_max_uploads))
-        .def("set_max_connections", allow_threads(&lt::session::set_max_connections))
-        .def("max_connections", allow_threads(&lt::session::max_connections))
-        .def("num_connections", allow_threads(&lt::session::num_connections))
-        .def("set_max_half_open_connections", allow_threads(&lt::session::set_max_half_open_connections))
-        .def("set_alert_queue_size_limit", allow_threads(&lt::session::set_alert_queue_size_limit))
-        .def("set_alert_mask", allow_threads(&lt::session::set_alert_mask))
-        .def("set_peer_proxy", allow_threads(&lt::session::set_peer_proxy))
-        .def("set_tracker_proxy", allow_threads(&lt::session::set_tracker_proxy))
-        .def("set_web_seed_proxy", allow_threads(&lt::session::set_web_seed_proxy))
-        .def("peer_proxy", allow_threads(&lt::session::peer_proxy))
-        .def("tracker_proxy", allow_threads(&lt::session::tracker_proxy))
-        .def("web_seed_proxy", allow_threads(&lt::session::web_seed_proxy))
-        .def("set_proxy", allow_threads(&lt::session::set_proxy))
-        .def("proxy", allow_threads(&lt::session::proxy))
-        .def("start_upnp", &start_upnp)
-        .def("stop_upnp", allow_threads(&lt::session::stop_upnp))
-        .def("start_lsd", allow_threads(&lt::session::start_lsd))
-        .def("stop_lsd", allow_threads(&lt::session::stop_lsd))
-        .def("start_natpmp", &start_natpmp)
-        .def("stop_natpmp", allow_threads(&lt::session::stop_natpmp))
-        .def("set_peer_id", allow_threads(&lt::session::set_peer_id))
+        .def("set_local_download_rate_limit", depr(&lt::session::set_local_download_rate_limit))
+        .def("local_download_rate_limit", depr(&lt::session::local_download_rate_limit))
+        .def("set_local_upload_rate_limit", depr(&lt::session::set_local_upload_rate_limit))
+        .def("local_upload_rate_limit", depr(&lt::session::local_upload_rate_limit))
+        .def("set_download_rate_limit", depr(&lt::session::set_download_rate_limit))
+        .def("download_rate_limit", depr(&lt::session::download_rate_limit))
+        .def("set_upload_rate_limit", depr(&lt::session::set_upload_rate_limit))
+        .def("upload_rate_limit", depr(&lt::session::upload_rate_limit))
+        .def("set_max_uploads", depr(&lt::session::set_max_uploads))
+        .def("set_max_connections", depr(&lt::session::set_max_connections))
+        .def("max_connections", depr(&lt::session::max_connections))
+        .def("num_connections", depr(&lt::session::num_connections))
+        .def("set_max_half_open_connections", depr(&lt::session::set_max_half_open_connections))
+        .def("set_alert_queue_size_limit", depr(&lt::session::set_alert_queue_size_limit))
+        .def("set_alert_mask", depr(&lt::session::set_alert_mask))
+        .def("set_peer_proxy", depr(&lt::session::set_peer_proxy))
+        .def("set_tracker_proxy", depr(&lt::session::set_tracker_proxy))
+        .def("set_web_seed_proxy", depr(&lt::session::set_web_seed_proxy))
+        .def("peer_proxy", depr(&lt::session::peer_proxy))
+        .def("tracker_proxy", depr(&lt::session::tracker_proxy))
+        .def("web_seed_proxy", depr(&lt::session::web_seed_proxy))
+        .def("set_proxy", depr(&lt::session::set_proxy))
+        .def("proxy", depr(&lt::session::proxy))
+        .def("start_upnp", depr(&start_upnp))
+        .def("stop_upnp", depr(&lt::session::stop_upnp))
+        .def("start_lsd", depr(&lt::session::start_lsd))
+        .def("stop_lsd", depr(&lt::session::stop_lsd))
+        .def("start_natpmp", depr(&start_natpmp))
+        .def("stop_natpmp", depr(&lt::session::stop_natpmp))
+        .def("set_peer_id", depr(&lt::session::set_peer_id))
 #endif // TORRENT_ABI_VERSION
         ;
 

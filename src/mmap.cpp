@@ -298,6 +298,20 @@ namespace {
 			;
 	}
 
+	mode_t file_perms(open_mode_t const mode)
+	{
+		// rely on default umask to filter x and w permissions
+		// for group and others
+		mode_t permissions = S_IRUSR | S_IWUSR
+			| S_IRGRP | S_IWGRP
+			| S_IROTH | S_IWOTH;
+
+		if ((mode & aux::open_mode::executable))
+			permissions |= S_IXGRP | S_IXOTH | S_IXUSR;
+
+		return permissions;
+	}
+
 	int mmap_prot(open_mode_t const m)
 	{
 		return (m & open_mode::write)
@@ -319,23 +333,30 @@ namespace {
 #endif
 			;
 	}
+
+	int open_file(std::string const filename, open_mode_t const mode)
+	{
+		int ret = ::open(filename.c_str(), file_flags(mode), file_perms(mode));
+
+#ifdef O_NOATIME
+		if (ret < 0 && (mode & open_mode::no_atime))
+		{
+			// NOATIME may not be allowed for certain files, it's best-effort,
+			// so just try again without NOATIME
+			ret = ::open(filename.c_str()
+				, file_flags(mode & ~open_mode::no_atime), file_perms(mode));
+		}
+#endif
+		if (ret < 0) throw_ex<storage_error>(error_code(errno, system_category()), operation_t::file_open);
+		return ret;
+	}
+
 } // anonymous
 
 file_handle::file_handle(string_view name, std::int64_t const size
 	, open_mode_t const mode)
-	: m_fd(open(name.to_string().c_str(), file_flags(mode), 0755))
+	: m_fd(open_file(convert_to_native_path_string(name.to_string()), mode))
 {
-#ifdef O_NOATIME
-	if (m_fd < 0 && (mode & open_mode::no_atime))
-	{
-		// NOATIME may not be allowed for certain files, it's best-effort,
-		// so just try again without NOATIME
-		m_fd = open(name.to_string().c_str()
-			, file_flags(mode & ~open_mode::no_atime), 0755);
-	}
-#endif
-	if (m_fd < 0) throw_ex<storage_error>(error_code(errno, system_category()), operation_t::file_open);
-
 #ifdef DIRECTIO_ON
 	// for solaris
 	if (mode & open_mode::no_cache)
@@ -617,9 +638,18 @@ file_mapping::file_mapping(file_handle file, open_mode_t const mode
 		throw_ex<storage_error>(error_code(GetLastError(), system_category()), operation_t::file_mmap);
 }
 
+void file_mapping::flush()
+{
+	if (m_mapping == nullptr) return;
+
+	// ignore errors, this is best-effort
+	FlushViewOfFile(m_mapping, static_cast<std::size_t>(m_size));
+}
+
 void file_mapping::close()
 {
 	if (m_mapping == nullptr) return;
+	flush();
 	std::lock_guard<std::mutex> l(*m_open_unmap_lock);
 	UnmapViewOfFile(m_mapping);
 	m_mapping = nullptr;

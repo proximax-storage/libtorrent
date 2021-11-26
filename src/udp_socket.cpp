@@ -47,6 +47,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/alert_manager.hpp"
 #include "libtorrent/socks5_stream.hpp" // for socks_error
 #include "libtorrent/aux_/keepalive.hpp"
+#include "libtorrent/aux_/resolver_interface.hpp"
 
 #include <cstdlib>
 #include <functional>
@@ -80,13 +81,14 @@ std::size_t const max_header_size = 255;
 struct socks5 : std::enable_shared_from_this<socks5>
 {
 	explicit socks5(io_context& ios, aux::listen_socket_handle ls
-		, aux::alert_manager& alerts)
+		, aux::alert_manager& alerts, aux::resolver_interface& res, bool const send_local_ep)
 		: m_socks5_sock(ios)
-		, m_resolver(ios)
+		, m_resolver(res)
 		, m_timer(ios)
 		, m_retry_timer(ios)
 		, m_alerts(alerts)
 		, m_listen_socket(std::move(ls))
+		, m_send_local_ep(send_local_ep)
 	{}
 
 	void start(aux::proxy_settings const& ps);
@@ -99,7 +101,7 @@ private:
 
 	std::shared_ptr<socks5> self() { return shared_from_this(); }
 
-	void on_name_lookup(error_code const& e, tcp::resolver::results_type ips);
+	void on_name_lookup(error_code const& e, std::vector<address> const& ips);
 	void on_connect_timeout(error_code const& e);
 	void on_connected(error_code const& e);
 	void handshake1(error_code const& e);
@@ -115,7 +117,7 @@ private:
 	void retry_connection();
 
 	tcp::socket m_socks5_sock;
-	tcp::resolver m_resolver;
+	aux::resolver_interface& m_resolver;
 	deadline_timer m_timer;
 	deadline_timer m_retry_timer;
 	aux::alert_manager& m_alerts;
@@ -137,6 +139,11 @@ private:
 
 	// count failures to increase the retry timer
 	int m_failures = 0;
+
+	// include our local IP and listen port in the UDP associate command
+	// Doing so may be risky in case we're talking to the proxy via NAT, and we
+	// don't actually know our IP from the proxy's point of view
+	bool m_send_local_ep = false;
 
 	// set to true when we've been asked to shut down
 	bool m_abort = false;
@@ -500,7 +507,7 @@ void udp_socket::bind(udp::endpoint const& ep, error_code& ec)
 }
 
 void udp_socket::set_proxy_settings(aux::proxy_settings const& ps
-	, aux::alert_manager& alerts)
+	, aux::alert_manager& alerts, aux::resolver_interface& resolver, bool const send_local_ep)
 {
 	TORRENT_ASSERT(is_single_thread());
 
@@ -520,7 +527,7 @@ void udp_socket::set_proxy_settings(aux::proxy_settings const& ps
 		// connect to socks5 server and open up the UDP tunnel
 
 		m_socks5_connection = std::make_shared<socks5>(m_ioc
-			, m_listen_socket, alerts);
+			, m_listen_socket, alerts, resolver, send_local_ep);
 		m_socks5_connection->start(ps);
 	}
 }
@@ -531,13 +538,13 @@ void socks5::start(aux::proxy_settings const& ps)
 {
 	m_proxy_settings = ps;
 
-	// TODO: use the system resolver_interface here
 	ADD_OUTSTANDING_ASYNC("socks5::on_name_lookup");
-	m_resolver.async_resolve(ps.hostname, to_string(ps.port).data(), std::bind(
-		&socks5::on_name_lookup, self(), _1, _2));
+	m_proxy_addr.port(ps.port);
+	m_resolver.async_resolve(ps.hostname, aux::resolver_interface::abort_on_shutdown
+		, std::bind(&socks5::on_name_lookup, self(), _1, _2));
 }
 
-void socks5::on_name_lookup(error_code const& e, tcp::resolver::results_type ips)
+void socks5::on_name_lookup(error_code const& e, std::vector<address> const& ips)
 {
 	COMPLETE_ASYNC("socks5::on_name_lookup");
 
@@ -555,31 +562,27 @@ void socks5::on_name_lookup(error_code const& e, tcp::resolver::results_type ips
 		return;
 	}
 
-	auto i = ips.begin();
 	// only set up a SOCKS5 tunnel for sockets with the same address family
 	// as the proxy
 	// this is a hack to mitigate excessive SOCKS5 tunnels, until this can get
 	// fixed properly.
-	for (;;)
-	{
-		if (i == ips.end())
-		{
-			if (m_alerts.should_post<socks5_alert>())
-				m_alerts.emplace_alert<socks5_alert>(m_listen_socket.get_local_endpoint()
-					, operation_t::hostname_lookup
-					, error_code(boost::system::errc::host_unreachable, generic_category()));
-			++m_failures;
-			retry_connection();
-			return;
-		}
+	auto const i = std::find_if(ips.begin(), ips.end()
+		, [&](address const& a) {
+			return m_listen_socket.can_route(a);
+		});
 
-		// we found a match
-		if (m_listen_socket.can_route(i->endpoint().address()))
-			break;
-		++i;
+	if (i == ips.end())
+	{
+		if (m_alerts.should_post<socks5_alert>())
+			m_alerts.emplace_alert<socks5_alert>(m_listen_socket.get_local_endpoint()
+				, operation_t::hostname_lookup
+				, error_code(boost::system::errc::host_unreachable, generic_category()));
+		++m_failures;
+		retry_connection();
+		return;
 	}
 
-	m_proxy_addr = i->endpoint();
+	m_proxy_addr.address(*i);
 
 	error_code ec;
 	m_socks5_sock.open(aux::is_v4(m_proxy_addr) ? tcp::v4() : tcp::v6(), ec);
@@ -864,9 +867,20 @@ void socks5::socks_forward_udp()
 	write_uint8(5, p); // SOCKS VERSION 5
 	write_uint8(3, p); // UDP ASSOCIATE command
 	write_uint8(0, p); // reserved
-	write_uint8(1, p); // ATYP = IPv4
-	write_uint32(0, p); // 0.0.0.0
-	write_uint16(0, p); // :0
+
+	if (m_send_local_ep)
+	{
+		auto const local_ep = m_listen_socket.get_local_endpoint();
+		write_uint8(aux::is_v4(local_ep) ? 1 : 4, p); // atyp
+		write_endpoint(local_ep, p);
+	}
+	else
+	{
+		write_uint8(1, p); // ATYP = IPv4
+		write_uint32(0, p); // 0.0.0.0
+		write_uint16(0, p); // :0
+	}
+
 	TORRENT_ASSERT_VAL(p - m_tmp_buf.data() < int(m_tmp_buf.size()), (p - m_tmp_buf.data()));
 	ADD_OUTSTANDING_ASYNC("socks5::connect1");
 	boost::asio::async_write(m_socks5_sock
@@ -974,7 +988,6 @@ void socks5::close()
 	m_abort = true;
 	error_code ec;
 	m_socks5_sock.close(ec);
-	m_resolver.cancel();
 	m_timer.cancel();
 	m_retry_timer.cancel();
 }

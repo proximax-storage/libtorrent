@@ -398,7 +398,7 @@ namespace {
 			}
 		}
 
-		if (symlink_path.empty())
+		if (symlink_path.empty() && file_size > 0)
 		{
 			bdecode_node const root = dict.dict_find_string("pieces root");
 			if (!root || root.type() != bdecode_node::string_t
@@ -408,7 +408,7 @@ namespace {
 				return false;
 			}
 			pieces_root = info_buffer + (root.string_offset() - info_offset);
-			if (file_size > 0 && sha256_hash(pieces_root).is_all_zeros())
+			if (sha256_hash(pieces_root).is_all_zeros())
 			{
 				ec = errors::torrent_missing_pieces_root;
 				return false;
@@ -1361,14 +1361,23 @@ namespace {
 			return false;
 		}
 
-		if (version >= 2
-			&& v1_files.num_files() > 0
-			&& !aux::files_equal(files, v1_files))
+		// ensure hybrid torrents have compatible v1 and v2 file storages
+		if (version >= 2 && v1_files.num_files() > 0)
 		{
-			// mark the torrent as invalid
-			m_files.set_piece_length(0);
-			ec = errors::torrent_inconsistent_files;
-			return false;
+			// previous versions of libtorrent did not not create hybrid
+			// torrents with "tail-padding". When loading, accept both.
+			if (files.num_files() == v1_files.num_files() + 1)
+			{
+				files.remove_tail_padding();
+			}
+
+			if (!aux::files_compatible(files, v1_files))
+			{
+				// mark the torrent as invalid
+				m_files.set_piece_length(0);
+				ec = errors::torrent_inconsistent_files;
+				return false;
+			}
 		}
 
 		// extract SHA-1 hashes for all pieces
@@ -1483,7 +1492,7 @@ namespace {
 	{
 		std::map<sha256_hash, string_view> piece_layers;
 
-		if (!e || e.type() != bdecode_node::dict_t)
+		if (e.type() != bdecode_node::dict_t)
 		{
 			ec = errors::torrent_missing_piece_layer;
 			return false;
@@ -1495,7 +1504,10 @@ namespace {
 			if (f.first.size() != static_cast<std::size_t>(sha256_hash::size())
 				|| f.second.type() != bdecode_node::string_t
 				|| f.second.string_length() % sha256_hash::size() != 0)
-				continue;
+			{
+				ec = errors::torrent_invalid_piece_layer;
+				return false;
+			}
 
 			piece_layers.emplace(sha256_hash(f.first), f.second.string_value());
 		}
@@ -1508,11 +1520,7 @@ namespace {
 				continue;
 
 			auto const piece_layer = piece_layers.find(orig_files().root(i));
-			if (piece_layer == piece_layers.end())
-			{
-				ec = errors::torrent_missing_piece_layer;
-				return false;
-			}
+			if (piece_layer == piece_layers.end()) continue;
 
 			int const num_pieces = orig_files().file_num_pieces(i);
 
@@ -1613,11 +1621,19 @@ namespace {
 		if (!parse_info_section(info, ec, piece_limit)) return false;
 		resolve_duplicate_filenames();
 
-		if (m_info_hash.has_v2() && !parse_piece_layers(torrent_file.dict_find_dict("piece layers"), ec))
+		if (m_info_hash.has_v2())
 		{
-			// mark the torrent as invalid
-			m_files.set_piece_length(0);
-			return false;
+			// allow torrent files without piece layers, just like we allow magnet
+			// links. However, if there are piece layers, make sure they're
+			// valid
+			bdecode_node const& e = torrent_file.dict_find_dict("piece layers");
+			if (e && !parse_piece_layers(e, ec))
+			{
+				TORRENT_ASSERT(ec);
+				// mark the torrent as invalid
+				m_files.set_piece_length(0);
+				return false;
+			}
 		}
 
 #ifndef TORRENT_DISABLE_MUTABLE_TORRENTS

@@ -40,6 +40,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "test_utils.hpp"
 #include "udp_tracker.hpp"
 #include "settings.hpp"
+#include "test_utils.hpp"
 #include "libtorrent/alert.hpp"
 #include "libtorrent/peer_info.hpp" // for peer_list_entry
 #include "libtorrent/alert_types.hpp"
@@ -350,6 +351,7 @@ void test_udp_tracker(std::string const& iface, address tracker, tcp::endpoint c
 	settings_pack pack = settings();
 	pack.set_bool(settings_pack::announce_to_all_trackers, true);
 	pack.set_bool(settings_pack::announce_to_all_tiers, true);
+	pack.set_int(settings_pack::alert_queue_size, 10000);
 
 	auto s = std::make_unique<lt::session>(pack);
 
@@ -447,7 +449,7 @@ TORRENT_TEST(http_peers)
 	pack.set_bool(settings_pack::announce_to_all_tiers, false);
 	pack.set_int(settings_pack::tracker_completion_timeout, 2);
 	pack.set_int(settings_pack::tracker_receive_timeout, 1);
-	pack.set_str(settings_pack::listen_interfaces, "0.0.0.0:39775");
+	pack.set_str(settings_pack::listen_interfaces, test_listen_interface());
 
 	auto s = std::make_unique<lt::session>(pack);
 
@@ -520,7 +522,7 @@ TORRENT_TEST(current_tracker)
 	pack.set_bool(settings_pack::announce_to_all_tiers, false);
 	pack.set_int(settings_pack::tracker_completion_timeout, 2);
 	pack.set_int(settings_pack::tracker_receive_timeout, 1);
-	pack.set_str(settings_pack::listen_interfaces, "0.0.0.0:39775");
+	pack.set_str(settings_pack::listen_interfaces, test_listen_interface());
 
 	auto s = std::make_unique<lt::session>(pack);
 
@@ -575,7 +577,7 @@ void test_proxy(bool proxy_trackers)
 	pack.set_bool(settings_pack::announce_to_all_tiers, false);
 	pack.set_int(settings_pack::tracker_completion_timeout, 2);
 	pack.set_int(settings_pack::tracker_receive_timeout, 1);
-	pack.set_str(settings_pack::listen_interfaces, "0.0.0.0:39775");
+	pack.set_str(settings_pack::listen_interfaces, test_listen_interface());
 
 	pack.set_str(settings_pack::proxy_hostname, "non-existing.com");
 	pack.set_int(settings_pack::proxy_type, settings_pack::socks5);

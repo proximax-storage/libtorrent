@@ -36,6 +36,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/torrent_info.hpp"
 #include "libtorrent/create_torrent.hpp"
 #include "libtorrent/aux_/merkle.hpp"
+#include "libtorrent/random.hpp"
 
 #ifdef _WIN32
 #include <io.h>
@@ -62,6 +63,15 @@ namespace libtorrent
 		t -= s * 1000;
 		int ms = t;
 		std::snprintf(ret, sizeof(ret), "%02d:%02d:%02d.%03d", h, m, s, ms);
+		return ret;
+	}
+
+	std::string test_listen_interface()
+	{
+		static int port = int(random(10000) + 10000);
+		char ret[200];
+		std::snprintf(ret, sizeof(ret), "0.0.0.0:%d", port);
+		++port;
 		return ret;
 	}
 }
@@ -118,5 +128,22 @@ std::vector<char> serialize(lt::torrent_info const& ti)
 	std::vector<char> out_buffer;
 	bencode(std::back_inserter(out_buffer), e);
 	return out_buffer;
+}
+
+lt::file_storage make_files(std::vector<file_ent> const files, int const piece_size)
+{
+	file_storage fs;
+	int i = 0;
+	for (auto const& e : files)
+	{
+		char filename[200];
+		std::snprintf(filename, sizeof(filename), "t/test%d", int(i++));
+		fs.add_file(filename, e.size, e.pad ? file_storage::flag_pad_file : file_flags_t{});
+	}
+
+	fs.set_piece_length(piece_size);
+	fs.set_num_pieces(aux::calc_num_pieces(fs));
+
+	return fs;
 }
 

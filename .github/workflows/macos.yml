@@ -14,17 +14,23 @@ jobs:
 
       strategy:
          matrix:
-            config: [ crypto=openssl, deprecated-functions=off ]
+            config: [ crypto=built-in, deprecated-functions=off ]
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          override_cache_key: ccache-macos-test-${{ matrix.config }}-${{ github.base_ref }}
+          ccache_options: |
+            max_size=1G
+
       - name: install boost
         run: |
-          brew install boost-build boost
+          brew install boost-build boost openssl
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build and run tests
@@ -45,13 +51,19 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          override_cache_key: ccache-macos-sim-${{ github.base_ref }}
+          ccache_options: |
+            max_size=1G
+
       - name: install boost
         run: |
-          brew install boost-build boost
+          brew install boost-build boost openssl
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build and run simulations
@@ -67,17 +79,23 @@ jobs:
 
       strategy:
          matrix:
-            config: [ crypto=openssl, release ]
+            config: [ crypto=built-in, release ]
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          override_cache_key: ccache-macos-build-${{ matrix.config }}-${{ github.base_ref }}
+          ccache_options: |
+            max_size=1G
+
       - name: install boost
         run: |
-          brew install boost-build boost
+          brew install boost-build boost openssl
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build library
@@ -119,4 +137,4 @@ jobs:
 
       - name: build library
         run: |
-          b2 -l400 warnings-as-errors=on cxxstd=14 darwin-ios darwin-ios_sim link=static
+          b2 -l400 cxxstd=14 darwin-ios darwin-ios_sim address-model=64  link=static

@@ -80,9 +80,9 @@ namespace libtorrent {
 	{
 		// the number of pieces included in the "set"
 		int num_pieces;
-		// the number of blocks, out of those pieces, that are pad
-		// blocks (i.e. entirely part of pad files)
-		int pad_blocks;
+		// the number of bytes, out of those pieces, that are pad
+		// files
+		int pad_bytes;
 		// true if the last piece is part of the set
 		bool last_piece;
 	};
@@ -141,10 +141,7 @@ namespace libtorrent {
 		// pick pieces in sequential order
 		static constexpr picker_options_t sequential = 4_bit;
 
-		// treat pieces with priority 6 and below as filtered
-		// to trigger end-game mode until all prio 7 pieces are
-		// completed
-		static constexpr picker_options_t time_critical_mode = 5_bit;
+		// 5_bit is available
 
 		// only expands pieces (when prefer contiguous blocks is set)
 		// within properly aligned ranges, not the largest possible
@@ -172,8 +169,8 @@ namespace libtorrent {
 			piece_index_t index{(std::numeric_limits<std::int32_t>::max)()};
 
 			// info about each block in this piece. this is an index into the
-			// m_block_info array, when multiplied by m_blocks_per_piece.
-			// The m_blocks_per_piece following entries contain information about
+			// m_block_info array, when multiplied by blocks_per_piece.
+			// The blocks_per_piece following entries contain information about
 			// all blocks in this piece.
 			std::uint16_t info_idx{(std::numeric_limits<std::uint16_t>::max)()};
 
@@ -220,7 +217,7 @@ namespace libtorrent {
 #endif
 		};
 
-		piece_picker(int blocks_per_piece, int blocks_in_last_piece, int total_num_pieces);
+		piece_picker(std::int64_t total_size, int piece_size);
 
 		void get_availability(aux::vector<int, piece_index_t>& avail) const;
 		int get_availability(piece_index_t piece) const;
@@ -263,7 +260,7 @@ namespace libtorrent {
 		piece_index_t reverse_cursor() const { return m_reverse_cursor; }
 
 		// sets all pieces to dont-have
-		void resize(int blocks_per_piece, int blocks_in_last_piece, int total_num_pieces);
+		void resize(std::int64_t total_size, int piece_size);
 		int num_pieces() const { return int(m_piece_map.size()); }
 
 		bool have_piece(piece_index_t) const;
@@ -329,17 +326,7 @@ namespace libtorrent {
 			, std::vector<piece_block>& backup_blocks
 			, std::vector<piece_block>& backup_blocks2
 			, int num_blocks, int prefer_contiguous_blocks
-			, torrent_peer* peer, std::vector<piece_index_t> const& ignore
-			, picker_options_t options) const;
-
-		// picks blocks only from downloading pieces
-		int add_blocks_downloading(downloading_piece const& dp
-			, typed_bitfield<piece_index_t> const& pieces
-			, std::vector<piece_block>& interesting_blocks
-			, std::vector<piece_block>& backup_blocks
-			, std::vector<piece_block>& backup_blocks2
-			, int num_blocks, int prefer_contiguous_blocks
-			, torrent_peer* peer
+			, torrent_peer* peer, std::vector<piece_index_t>& ignore
 			, picker_options_t options) const;
 
 		// clears the peer pointer in all downloading pieces with this
@@ -375,7 +362,7 @@ namespace libtorrent {
 		void mark_as_canceled(piece_block block, torrent_peer* peer);
 		void mark_as_finished(piece_block block, torrent_peer* peer);
 
-		void mark_as_pad(piece_block block);
+		void set_pad_bytes(piece_index_t p, int bytes);
 
 		// prevent blocks from being picked from this piece.
 		// to unlock the piece, call restore_piece() on it
@@ -465,7 +452,7 @@ namespace libtorrent {
 
 		piece_count all_pieces() const;
 
-		int pad_blocks_in_piece(piece_index_t const index) const;
+		int pad_bytes_in_piece(piece_index_t const index) const;
 
 		// number of pieces whose hash has passed (but haven't necessarily
 		// been flushed to disk yet)
@@ -523,17 +510,36 @@ namespace libtorrent {
 		std::pair<int, int> distributed_copies() const;
 
 		// return the array of block_info objects for a given downloading_piece.
-		// this array has m_blocks_per_piece elements in it
+		// this array has blocks_per_piece elements in it
 		span<block_info const> blocks_for_piece(downloading_piece const& dp) const;
 
 	private:
+
+		// picks blocks only from downloading pieces
+		int add_blocks_downloading(downloading_piece const& dp
+			, typed_bitfield<piece_index_t> const& pieces
+			, std::vector<piece_block>& interesting_blocks
+			, std::vector<piece_block>& backup_blocks
+			, std::vector<piece_block>& backup_blocks2
+			, int num_blocks, int prefer_contiguous_blocks
+			, torrent_peer* peer
+			, picker_options_t options) const;
+
+		int block_size() const
+		{
+			TORRENT_ASSERT(m_piece_size > 0);
+			TORRENT_ASSERT(default_block_size > 0);
+			return (std::min)(m_piece_size, default_block_size);
+		}
+		int blocks_per_piece() const;
+		int piece_size(piece_index_t p) const;
 
 		piece_extent_t extent_for(piece_index_t) const;
 		index_range<piece_index_t> extent_for(piece_extent_t) const;
 
 		void record_downloading_piece(piece_index_t const p);
 
-		int num_pad_blocks() const { return m_num_pad_blocks; }
+		int num_pad_bytes() const { return m_num_pad_bytes; }
 
 		span<block_info> mutable_blocks_for_piece(downloading_piece const& dp);
 
@@ -795,14 +801,9 @@ namespace libtorrent {
 		// TODO: should this be allocated lazily?
 		mutable aux::vector<piece_pos, piece_index_t> m_piece_map;
 
-		// this indicates whether a block has been marked as a pad
-		// block or not. It's indexed by block index, i.e. piece_index
-		// * blocks_per_piece + block. These blocks should not be
-		// picked and are considered to be had
-		// TODO: this could be a much more efficient data structure
-		bitfield m_pad_blocks;
-
-		// tracks the number of blocks in a specific piece that are pad blocks
+		// tracks the number of bytes in a specific piece that are part of a pad
+		// file. The padding is assumed to be at the end of the piece, and the
+		// blocks covered by the pad bytes are not picked by the piece picker
 		std::unordered_map<piece_index_t, int> m_pads_in_piece;
 
 		// when the adjecent_piece affinity is enabled, this contains the most
@@ -812,18 +813,17 @@ namespace libtorrent {
 		// traversed already.
 		mutable std::vector<piece_extent_t> m_recent_extents;
 
-		// the number of bits set in the m_pad_blocks bitfield, i.e.
-		// the number of blocks marked as pads
-		int m_num_pad_blocks = 0;
+		// the number of bytes of pad file set in this piece picker
+		int m_num_pad_bytes = 0;
 
 		// the number of pad blocks that we already have
-		int m_have_pad_blocks = 0;
+		int m_have_pad_bytes = 0;
 
 		// the number of pad blocks part of filtered pieces we don't have
-		int m_filtered_pad_blocks = 0;
+		int m_filtered_pad_bytes = 0;
 
 		// the number of pad blocks we have that are also filtered
-		int m_have_filtered_pad_blocks = 0;
+		int m_have_filtered_pad_bytes = 0;
 
 		// the number of seeds. These are not added to
 		// the availability counters of the pieces
@@ -860,13 +860,14 @@ namespace libtorrent {
 		aux::vector<block_info> m_block_info;
 
 		// these are block ranges in m_block_info that are free. The numbers
-		// in here, when multiplied by m_blocks_per_piece is the index to the
+		// in here, when multiplied by blocks_per_piece is the index to the
 		// first block in the range that's free to use by a new downloading_piece.
 		// this is a free-list.
 		std::vector<std::uint16_t> m_free_block_infos;
 
-		std::uint16_t m_blocks_per_piece = 0;
 		std::uint16_t m_blocks_in_last_piece = 0;
+		int m_piece_size = 0;
+		std::int64_t m_total_size = 0;
 
 		// the number of filtered pieces that we don't already
 		// have. total_number_of_pieces - number_of_pieces_we_have

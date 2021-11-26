@@ -7,6 +7,18 @@ on:
 
 jobs:
 
+   pre-commit:
+      # TODO: matrix across python version and os
+      runs-on: ubuntu-latest
+      steps:
+      - uses: actions/checkout@v2
+        with:
+           submodules: recursive
+      - uses: actions/setup-python@v2
+        with:
+           python-version: 3.6
+      - uses: pre-commit/action@v2.0.0
+
    build:
       name: build
       runs-on: ubuntu-20.04
@@ -18,7 +30,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -26,6 +38,13 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-build-${{ github.base_ref }}-${{ matrix.config }}
+          ccache_options: |
+            max_size=5G
 
       - name: install boost
         run: |
@@ -59,7 +78,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -67,6 +86,18 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-fuzzers-${{ github.base_ref }}
+          ccache_options: |
+            max_size=500M
+
+      - name: install clang-9
+        continue-on-error: true
+        run: |
+          sudo apt install clang-9
 
       - name: install boost
         run: |
@@ -86,7 +117,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -94,6 +125,13 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-check-headers-${{ github.base_ref }}
+          ccache_options: |
+            max_size=500M
 
       - name: install boost
         run: |
@@ -112,7 +150,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -120,6 +158,13 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-clang-tidy-${{ github.base_ref }}
+          ccache_options: |
+            max_size=500M
 
       - name: install clang-tidy
         run: sudo apt install clang-tidy libc++-dev
@@ -144,14 +189,14 @@ jobs:
          matrix:
             include:
                - config: address-sanitizer=norecover undefined-sanitizer=norecover crypto=openssl
-               - config: toolset=clang address-sanitizer=norecover undefined-sanitizer=norecover
+               - config: toolset=clang logging=off address-sanitizer=norecover undefined-sanitizer=norecover
                - config: thread-sanitizer=norecover crypto=openssl release debug-symbols=on
                - config: crypto=gnutls
                - config: deprecated-functions=off
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -160,21 +205,33 @@ jobs:
         run: |
           sudo apt update
 
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-tests-${{ matrix.config }}-${{ github.base_ref }}
+          ccache_options: |
+            max_size=5G
+
       - name: install gnutls
         if: ${{ contains(matrix.config, 'crypto=gnutls') }}
         run: |
           sudo apt install libgnutls28-dev
 
+      - name: install clang-10
+        continue-on-error: true
+        run: |
+          sudo apt install clang-10
+
       - name: install boost
         run: |
           sudo apt install libboost-tools-dev libboost-dev libboost-system-dev
           echo "using gcc ;" >>~/user-config.jam
-          echo "using clang : 9 : clang++-9 ;" >>~/user-config.jam
+          echo "using clang : 10 : clang++-10 ;" >>~/user-config.jam
 
       - name: build and run tests
         run: |
           cd test
-          b2 ${{ matrix.config }} -l400 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on deterministic-tests
+          b2 ${{ matrix.config }} -l500 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on deterministic-tests
 
       - name: run tests (flaky)
         uses: nick-invision/retry@v2
@@ -182,7 +239,7 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 4
           max_attempts: 3
-          command: (cd test; b2 ${{ matrix.config }} -l400 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on)
+          command: (cd test; b2 ${{ matrix.config }} -l500 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on)
 
 
 
@@ -192,7 +249,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -200,6 +257,13 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-simulations-${{ github.base_ref }}
+          ccache_options: |
+            max_size=5G
 
       - name: install boost
         run: |
@@ -222,7 +286,7 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v2
         with:
            submodules: true
 
@@ -230,6 +294,13 @@ jobs:
         continue-on-error: true
         run: |
           sudo apt update
+
+      - uses: Chocobo1/setup-ccache-action@v1
+        with:
+          update_packager_index: false
+          override_cache_key: ccache-linux-dist-${{ matrix.os }}-${{ github.base_ref }}
+          ccache_options: |
+            max_size=15G
 
       - name: install dependencies
         run: |
@@ -251,7 +322,7 @@ jobs:
           tar xvzf libtorrent-rasterbar-*.tar.gz
           cd libtorrent-rasterbar-*/
           b2 install cxxstd=14 --prefix=test-install-root
-          cat test-install-root/share/pkgconfig/libtorrent-rasterbar.pc
+          cat test-install-root/lib/pkgconfig/libtorrent-rasterbar.pc
 
       - name: test-tarball (b2 tests)
         run: |

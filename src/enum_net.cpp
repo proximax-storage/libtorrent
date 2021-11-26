@@ -92,7 +92,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #if TORRENT_USE_NETLINK
 
 // We really should be including <linux/if.h> here, for the IF_OPER_* flags.
-// Howerver, including this header creates conflicting definitions of <net/if.h>
+// However, including this header creates conflicting definitions of <net/if.h>
 // on some platforms. So, instead, we just pull those flags out and define them
 // here.
 //#include <linux/if.h> // for IF_OPER* flags
@@ -587,12 +587,18 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
 #if TORRENT_USE_IFADDRS && !defined TORRENT_BUILD_SIMULATOR
 	bool iface_from_ifaddrs(ifaddrs *ifa, ip_interface &rv)
 	{
+		// some android ifaddrs implementations are buggy
+		if (ifa->ifa_addr == nullptr) return false;
+
 		// determine address
 		rv.interface_address = sockaddr_to_address(ifa->ifa_addr);
 		if (rv.interface_address.is_unspecified()) return false;
 
-		std::strncpy(rv.name, ifa->ifa_name, sizeof(rv.name) - 1);
-		rv.name[sizeof(rv.name) - 1] = '\0';
+		if (ifa->ifa_name != nullptr)
+		{
+			std::strncpy(rv.name, ifa->ifa_name, sizeof(rv.name) - 1);
+			rv.name[sizeof(rv.name) - 1] = '\0';
+		}
 
 		// determine netmask
 		if (ifa->ifa_netmask != nullptr)
@@ -1029,9 +1035,21 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
 		return {};
 	}
 
+	bool has_any_internet_route(span<ip_route const> routes)
+	{
+		return std::any_of(routes.begin(), routes.end()
+			, [&](ip_route const& r) -> bool
+			{
+				// if *any* global IP can be routed to this interface, it's
+				// considered able to reach the internet
+				return r.destination.is_unspecified()
+					|| aux::is_global(r.destination) ;
+			});
+	}
+
 	bool has_internet_route(string_view device, int const fam, span<ip_route const> routes)
 	{
-		return std::find_if(routes.begin(), routes.end()
+		return std::any_of(routes.begin(), routes.end()
 			, [&](ip_route const& r) -> bool
 			{
 				// if *any* global IP can be routed to this interface, it's
@@ -1041,7 +1059,7 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
 					&& (r.destination.is_unspecified()
 						|| aux::is_global(r.destination)
 					);
-			}) != routes.end();
+			});
 	}
 
 	std::vector<ip_route> enum_routes(io_context& ios, error_code& ec)
@@ -1503,6 +1521,8 @@ int _System __libsocket_sysctl(int* mib, u_int namelen, void *oldp, size_t *oldl
 				i = reinterpret_cast<ifreq const*>(reinterpret_cast<char const*>(i) + skip);
 			}
 		}
+#elif defined TORRENT_ANDROID && __ANDROID_API__ >= 24
+		ec = boost::asio::error::operation_not_supported;
 #else
 #error "don't know how to enumerate network routes on this platform"
 #endif

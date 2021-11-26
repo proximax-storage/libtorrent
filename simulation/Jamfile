@@ -16,6 +16,7 @@ project
 	<source>setup_dht.cpp
 	<source>create_torrent.cpp
 	<source>utils.cpp
+	<source>disk_io.cpp
 	<toolset>msvc:<cflags>/wd4275
 	<toolset>msvc:<cflags>/wd4005
 	<toolset>msvc:<cflags>/wd4268
@@ -25,6 +26,7 @@ project
 	<asserts>on
 	<picker-debugging>on
 	<cxxstd>14
+	<crypto>built-in
 	;
 
 run test_pause.cpp ;

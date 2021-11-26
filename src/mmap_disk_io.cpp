@@ -58,11 +58,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/alloca.hpp"
 #include "libtorrent/aux_/array.hpp"
 #include "libtorrent/add_torrent_params.hpp"
-#include "libtorrent/aux_/merkle.hpp"
 #include "libtorrent/aux_/numeric_cast.hpp"
 #include "libtorrent/settings_pack.hpp"
 #include "libtorrent/aux_/file_view_pool.hpp"
 #include "libtorrent/aux_/scope_end.hpp"
+#include "libtorrent/aux_/storage_free_list.hpp"
 
 #ifdef _WIN32
 #include "libtorrent/aux_/windows.hpp"
@@ -137,14 +137,6 @@ namespace {
 	{
 		aux::open_mode_t ret = aux::open_mode::read_only;
 		if (!(j->flags & disk_interface::sequential_access)) ret |= aux::open_mode::random_access;
-		return ret;
-	}
-
-	storage_index_t pop(std::vector<storage_index_t>& q)
-	{
-		TORRENT_ASSERT(!q.empty());
-		storage_index_t const ret = q.back();
-		q.pop_back();
 		return ret;
 	}
 } // anonymous namespace
@@ -322,10 +314,6 @@ private:
 
 	settings_interface const& m_settings;
 
-	// we call close_oldest_file on the file_pool regularly. This is the next
-	// time we should call it
-	time_point m_next_close_oldest_file = min_time();
-
 	// LRU cache of open files
 	aux::file_view_pool m_file_pool;
 
@@ -365,7 +353,7 @@ private:
 	aux::vector<std::shared_ptr<mmap_storage>, storage_index_t> m_torrents;
 
 	// indices into m_torrents to empty slots
-	std::vector<storage_index_t> m_free_slots;
+	aux::storage_free_list m_free_slots;
 
 	std::atomic_flag m_jobs_aborted = ATOMIC_FLAG_INIT;
 
@@ -406,19 +394,12 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 	{
 		TORRENT_ASSERT(params.files.is_valid());
 
-		storage_index_t const idx = m_free_slots.empty()
-			? m_torrents.end_index()
-			: pop(m_free_slots);
+		storage_index_t const idx = m_free_slots.new_index(m_torrents.end_index());
 		auto storage = std::make_shared<mmap_storage>(params, m_file_pool);
 		storage->set_storage_index(idx);
 		storage->set_owner(owner);
 		if (idx == m_torrents.end_index())
-		{
-			// make sure there's always space in here to add another free slot.
-			// stopping a torrent should never fail because it needs to allocate memory
-			m_free_slots.reserve(m_torrents.size() + 1);
 			m_torrents.emplace_back(std::move(storage));
-		}
 		else m_torrents[idx] = std::move(storage);
 		return storage_holder(idx, *this);
 	}
@@ -426,7 +407,7 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 	void mmap_disk_io::remove_torrent(storage_index_t const idx)
 	{
 		m_torrents[idx].reset();
-		m_free_slots.push_back(idx);
+		m_free_slots.add(idx);
 	}
 
 #if TORRENT_USE_ASSERTS
@@ -435,6 +416,19 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 		DLOG("destructing mmap_disk_io\n");
 		TORRENT_ASSERT(m_magic == 0x1337);
 		m_magic = 0xdead;
+
+		TORRENT_ASSERT(m_generic_threads.num_threads() == 0);
+		TORRENT_ASSERT(m_hash_threads.num_threads() == 0);
+		if (!m_generic_io_jobs.m_queued_jobs.empty())
+		{
+			for (auto i = m_generic_io_jobs.m_queued_jobs.iterate(); i.get(); i.next())
+				std::printf("generic job: %d\n", int(i.get()->action));
+		}
+		if (!m_hash_io_jobs.m_queued_jobs.empty())
+		{
+			for (auto i = m_hash_io_jobs.m_queued_jobs.iterate(); i.get(); i.next())
+				std::printf("hash job: %d\n", int(i.get()->action));
+		}
 		TORRENT_ASSERT(m_generic_io_jobs.m_queued_jobs.empty());
 		TORRENT_ASSERT(m_hash_io_jobs.m_queued_jobs.empty());
 	}
@@ -1050,6 +1044,7 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 		aux::open_mode_t const file_flags = file_flags_for_job(j);
 
 		TORRENT_ASSERT(!v2 || int(j->d.h.block_hashes.size()) >= blocks_in_piece2);
+		TORRENT_ASSERT(v1 || v2);
 
 		hasher h;
 		int ret = 0;
@@ -1511,6 +1506,14 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 		++m_num_running_threads;
 		m_stats_counters.inc_stats_counter(counters::num_running_threads, 1);
 
+		// we call close_oldest_file on the file_pool regularly. This is the next
+		// time we should call it
+		time_point next_close_oldest_file = min_time();
+
+#if TORRENT_HAVE_MAP_VIEW_OF_FILE
+		time_point next_flush_file = min_time();
+#endif
+
 		for (;;)
 		{
 			aux::disk_io_job* j = nullptr;
@@ -1539,20 +1542,30 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 					}
 				}
 
-				if (now > m_next_close_oldest_file)
+				if (now > next_close_oldest_file)
 				{
 					seconds const interval(m_settings.get_int(settings_pack::close_file_interval));
 					if (interval <= seconds(0))
 					{
 						// check again in one minute, in case the setting changed
-						m_next_close_oldest_file = now + minutes(1);
+						next_close_oldest_file = now + minutes(1);
 					}
 					else
 					{
-						m_next_close_oldest_file = now + interval;
+						next_close_oldest_file = now + interval;
 						m_file_pool.close_oldest();
 					}
 				}
+
+#if TORRENT_HAVE_MAP_VIEW_OF_FILE
+				if (now > next_flush_file)
+				{
+					// on windows we need to explicitly ask the operating system to flush
+					// dirty pages from time to time
+					m_file_pool.flush_next_file();
+					next_flush_file = now + seconds(30);
+				}
+#endif
 			}
 
 			execute_job(j);
@@ -1627,7 +1640,8 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 
 	mmap_disk_io::job_queue& mmap_disk_io::queue_for_job(aux::disk_io_job* j)
 	{
-		if (m_hash_threads.max_threads() > 0 && j->action == aux::job_action_t::hash)
+		if (m_hash_threads.max_threads() > 0
+			&& (j->action == aux::job_action_t::hash || j->action == aux::job_action_t::hash2))
 			return m_hash_io_jobs;
 		else
 			return m_generic_io_jobs;
@@ -1635,7 +1649,8 @@ TORRENT_EXPORT std::unique_ptr<disk_interface> mmap_disk_io_constructor(
 
 	aux::disk_io_thread_pool& mmap_disk_io::pool_for_job(aux::disk_io_job* j)
 	{
-		if (m_hash_threads.max_threads() > 0 && j->action == aux::job_action_t::hash)
+		if (m_hash_threads.max_threads() > 0
+			&& (j->action == aux::job_action_t::hash || j->action == aux::job_action_t::hash2))
 			return m_hash_threads;
 		else
 			return m_generic_threads;

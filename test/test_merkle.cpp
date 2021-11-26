@@ -33,9 +33,26 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "test.hpp"
 #include "libtorrent/aux_/merkle.hpp"
+#include "libtorrent/bitfield.hpp"
 #include <iostream>
 
 using namespace lt;
+
+namespace {
+
+	void compare_bits(bitfield const& bits, char const* str)
+	{
+		for (int i = 0; *str; ++i, ++str)
+		{
+			if (*str == '1')
+				TEST_CHECK(bits.get_bit(i));
+			else if (*str == '0')
+				TEST_CHECK(!bits.get_bit(i));
+			else
+				TEST_CHECK(false);
+		}
+	}
+}
 
 TORRENT_TEST(num_leafs)
 {
@@ -212,6 +229,31 @@ TORRENT_TEST(merkle_get_first_child)
 	TEST_EQUAL(merkle_get_first_child(14), 29);
 	TEST_EQUAL(merkle_get_first_child(15), 31);
 	TEST_EQUAL(merkle_get_first_child(16), 33);
+}
+
+TORRENT_TEST(merkle_get_first_child2)
+{
+	// this is the structure:
+	//                        0
+	//            1                      2
+	//      3           4           5           6
+	//   7     8     9     10    11    12    13    14
+	// 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+	// 31 ...
+
+	TEST_EQUAL(merkle_get_first_child(0, 0), 0);
+	TEST_EQUAL(merkle_get_first_child(0, 1), 1);
+	TEST_EQUAL(merkle_get_first_child(0, 2), 3);
+	TEST_EQUAL(merkle_get_first_child(0, 3), 7);
+	TEST_EQUAL(merkle_get_first_child(0, 4), 15);
+	TEST_EQUAL(merkle_get_first_child(0, 5), 31);
+
+	TEST_EQUAL(merkle_get_first_child(2, 0), 2);
+	TEST_EQUAL(merkle_get_first_child(2, 1), 5);
+	TEST_EQUAL(merkle_get_first_child(2, 2), 11);
+	TEST_EQUAL(merkle_get_first_child(2, 3), 23);
+	TEST_EQUAL(merkle_get_first_child(2, 4), 47);
+	TEST_EQUAL(merkle_get_first_child(2, 5), 95);
 }
 
 TORRENT_TEST(merkle_layer_start)
@@ -759,98 +801,6 @@ TORRENT_TEST(merkle_pad)
 	TEST_CHECK(merkle_pad(32, 8) == pad2);
 }
 
-TORRENT_TEST(merkle_check_proofs_right_left)
-{
-/*
-	       ah
-	   ad      eh
-	 ab  cd  ef  gh
-	a b c d  e f g h
-*/
-
-	// Prove that c is correct by providing its position in its layer (2) and
-	// all the uncle-hashes up. We then get the root hash back which we can
-	// verify against ah.
-	std::vector<sha256_hash> uncles{d, ab, eh};
-
-	// TODO: use strucutured bindings here in C++17
-	aux::vector<std::pair<sha256_hash, sha256_hash>> proofs;
-	sha256_hash tree_root;
-	std::tie(proofs, tree_root) = merkle_check_proofs(c, uncles, 2);
-
-	TEST_CHECK(tree_root == ah);
-	TEST_CHECK((proofs == std::vector<std::pair<sha256_hash, sha256_hash>>{{c, d}, {ab, cd}, {ad, eh}}));
-}
-
-TORRENT_TEST(merkle_check_proofs_left_right)
-{
-/*
-	       ah
-	   ad      eh
-	 ab  cd  ef  gh
-	a b c d  e f g h
-*/
-
-	// Prove that d is correct by providing its position in its layer (3) and
-	// all the uncle-hashes up. We then get the root hash back which we can
-	// verify against ah.
-	std::vector<sha256_hash> uncles{c, ab, eh};
-
-	// TODO: use strucutured bindings here in C++17
-	aux::vector<std::pair<sha256_hash, sha256_hash>> proofs;
-	sha256_hash tree_root;
-	std::tie(proofs, tree_root) = merkle_check_proofs(d, uncles, 3);
-
-	TEST_CHECK(tree_root == ah);
-	TEST_CHECK((proofs == std::vector<std::pair<sha256_hash, sha256_hash>>{{c, d}, {ab, cd}, {ad, eh}}));
-}
-
-TORRENT_TEST(merkle_check_proofs_far_left)
-{
-/*
-	       ah
-	   ad      eh
-	 ab  cd  ef  gh
-	a b c d  e f g h
-*/
-
-	// Prove that a is correct by providing its position in its layer (0) and
-	// all the uncle-hashes up. We then get the root hash back which we can
-	// verify against ah.
-	std::vector<sha256_hash> uncles{b, cd, eh};
-
-	// TODO: use strucutured bindings here in C++17
-	aux::vector<std::pair<sha256_hash, sha256_hash>> proofs;
-	sha256_hash tree_root;
-	std::tie(proofs, tree_root) = merkle_check_proofs(a, uncles, 0);
-
-	TEST_CHECK(tree_root == ah);
-	TEST_CHECK((proofs == std::vector<std::pair<sha256_hash, sha256_hash>>{{a, b}, {ab, cd}, {ad, eh}}));
-}
-
-TORRENT_TEST(merkle_check_proofs_far_right)
-{
-/*
-	       ah
-	   ad      eh
-	 ab  cd  ef  gh
-	a b c d  e f g h
-*/
-
-	// Prove that h is correct by providing its position in its layer (7) and
-	// all the uncle-hashes up. We then get the root hash back which we can
-	// verify against ah.
-	std::vector<sha256_hash> uncles{g, ef, ad};
-
-	// TODO: use strucutured bindings here in C++17
-	aux::vector<std::pair<sha256_hash, sha256_hash>> proofs;
-	sha256_hash tree_root;
-	std::tie(proofs, tree_root) = merkle_check_proofs(h, uncles, 7);
-
-	TEST_CHECK(tree_root == ah);
-	TEST_CHECK((proofs == std::vector<std::pair<sha256_hash, sha256_hash>>{{g, h}, {ef, gh}, {ad, eh}}));
-}
-
 TORRENT_TEST(merkle_validate_node)
 {
 	TEST_CHECK(merkle_validate_node(a, b, ab));
@@ -871,7 +821,6 @@ TORRENT_TEST(merkle_validate_node)
 
 TORRENT_TEST(merkle_validate_copy_full)
 {
-
 	v const src{
 	       ah,
 	   ad,     eh,
@@ -879,15 +828,86 @@ TORRENT_TEST(merkle_validate_copy_full)
 	a,b,c,d,e,f,g,h};
 
 	v empty_tree(15);
+	bitfield verified(8);
 
-	merkle_validate_copy(src, empty_tree, ah);
+	merkle_validate_copy(src, empty_tree, ah, verified);
 
+	compare_bits(verified, "11111111");
 	TEST_CHECK(empty_tree == src);
+}
+
+TORRENT_TEST(merkle_validate_copy_full_odd_nodes)
+{
+	v const src{
+	       ah,
+	   ad,     eh,
+	 ab, cd, ef, gh,
+	a,b,c,d,e,f,g,h};
+
+	v empty_tree(15);
+	// we pretend that h is a padding node. This algorithm doesn't care that
+	// it's not zero (yet)
+	bitfield verified(7);
+
+	merkle_validate_copy(src, empty_tree, ah, verified);
+
+	compare_bits(verified, "1111111");
+	TEST_CHECK(empty_tree == src);
+}
+
+
+TORRENT_TEST(merkle_validate_copy_invalid_leaf)
+{
+	v const src{
+	       ah,
+	   ad,     eh,
+	 ab, cd, ef, gh,
+	a,b,c,d,e,ef,g,h};
+
+	v empty_tree(15);
+	bitfield verified(8);
+
+	merkle_validate_copy(src, empty_tree, ah, verified);
+
+	// leaf 5 had an invalid hash, it's sibling (leaf 4) could also not be
+	// validated because of it
+	compare_bits(verified, "11110011");
+
+	v const expected{
+	       ah,
+	   ad,     eh,
+	 ab, cd, ef, gh,
+	a,b,c,d,o,o,g,h};
+	TEST_CHECK(empty_tree == expected);
+}
+
+TORRENT_TEST(merkle_validate_copy_many_invalid_leafs)
+{
+	v const src{
+	       ah,
+	   ad,     eh,
+	 ab, cd, ef, gh,
+	a,b,ef,d,eh,ef,g,ah};
+
+	v empty_tree(15);
+	bitfield verified(8);
+
+	merkle_validate_copy(src, empty_tree, ah, verified);
+
+	// leaf 2,4, 5 and 7 had an invalid hash, their siblings (leaf 3 and 6) could also not be
+	// validated because of it
+	compare_bits(verified, "11000000");
+
+	v const expected{
+	       ah,
+	   ad,     eh,
+	 ab, cd, ef, gh,
+	a,b,o,o,o,o,o,o};
+	TEST_CHECK(empty_tree == expected);
 }
 
 TORRENT_TEST(merkle_validate_copy_partial)
 {
-
 	v const src{
 	       ah,
 	   ad,     eh,
@@ -895,8 +915,11 @@ TORRENT_TEST(merkle_validate_copy_partial)
 	a,b,c,o,o,o,o,o};
 
 	v empty_tree(15);
+	bitfield verified(8);
 
-	merkle_validate_copy(src, empty_tree, ah);
+	merkle_validate_copy(src, empty_tree, ah, verified);
+
+	compare_bits(verified, "11000000");
 
 	v const expected{
 	       ah,
@@ -909,7 +932,6 @@ TORRENT_TEST(merkle_validate_copy_partial)
 
 TORRENT_TEST(merkle_validate_copy_invalid_root)
 {
-
 	v const src{
 	       ah,
 	   ad,     eh,
@@ -917,17 +939,18 @@ TORRENT_TEST(merkle_validate_copy_invalid_root)
 	a,b,c,o,o,o,o,o};
 
 	v empty_tree(15);
+	bitfield verified(8);
 
-	merkle_validate_copy(src, empty_tree, a);
+	merkle_validate_copy(src, empty_tree, a, verified);
 
 	v const expected(15);
 
+	compare_bits(verified, "00000000");
 	TEST_CHECK(empty_tree == expected);
 }
 
 TORRENT_TEST(merkle_validate_copy_root_only)
 {
-
 	v const src{
 	       ah,
 	    o,      o,
@@ -935,8 +958,11 @@ TORRENT_TEST(merkle_validate_copy_root_only)
 	o,o,o,o,o,o,o,o};
 
 	v empty_tree(15);
+	bitfield verified(8);
 
-	merkle_validate_copy(src, empty_tree, ah);
+	merkle_validate_copy(src, empty_tree, ah, verified);
+
+	compare_bits(verified, "00000000");
 
 	v const expected{
 	       ah,
@@ -945,22 +971,6 @@ TORRENT_TEST(merkle_validate_copy_root_only)
 	o,o,o,o,o,o,o,o};
 
 	TEST_CHECK(empty_tree == expected);
-}
-
-TORRENT_TEST(merkle_validate_proofs)
-{
-/*
-	       ah
-	   ad      eh
-	 ab  cd  ef  gh
-	a b c d  e f g h
-*/
-	using p = std::vector<std::pair<sha256_hash, sha256_hash>>;
-	TEST_CHECK(merkle_validate_proofs(5, p{{ef, gh},{ad, eh}}));
-	TEST_CHECK(merkle_validate_proofs(6, p{{ef, gh},{ad, eh}}));
-	TEST_CHECK(merkle_validate_proofs(9, p{{c, d}, {ab, cd}, {ad, eh}}));
-	TEST_CHECK(merkle_validate_proofs(7, p{{a, b}, {ab, cd}, {ad, eh}}));
-	TEST_CHECK(merkle_validate_proofs(8, p{{a, b}, {ab, cd}, {ad, eh}}));
 }
 
 TORRENT_TEST(merkle_validate_single_leayer_fail_no_parents)
@@ -1077,4 +1087,231 @@ TORRENT_TEST(is_subtree_known_more_padding_two_levels)
 	a,b,o,d,e,f,o,o};
 
 	TEST_CHECK(merkle_find_known_subtree(src, 5, 6) == std::make_tuple(4, 4, 2));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_mixed)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs{f, gh, ad};
+
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 11, e, proofs));
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       eh,
+	  o,    o,  ef,   gh,
+	o, o, o, o,e, f, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_mixed_failure)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = eh; // this is not the correct root
+
+	v const proofs{f, gh, ad};
+
+	TEST_CHECK(!merkle_validate_and_insert_proofs(tree, 11, e, proofs));
+
+	// make sure all nodes that were filled in were cleared correctly
+	TEST_CHECK((tree == v{
+	          eh,
+	      o,        o,
+	  o,    o,   o,    o,
+	o, o, o, o,o, o, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_left)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs{b, cd, eh};
+
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 7, a, proofs));
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       eh,
+	  ab,   cd,  o,    o,
+	a, b, o, o,o, o, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_right)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs{g, ef, ad};
+
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 14, h, proofs));
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       eh,
+	  o,    o,   ef,   gh,
+	o, o, o, o,o, o, g, h}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_early_success)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+	tree[1] = ad;
+	tree[2] = eh;
+
+	v const proofs{f, gh, ad};
+
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 11, e, proofs));
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       eh,
+	  o,    o,  ef,   gh,
+	o, o, o, o,e, f, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_early_failure)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+	tree[1] = ad;
+	tree[2] = ah; // <- this is not the right hash. It should cause validation to fail
+
+	v const proofs{f, gh, ad};
+
+	TEST_CHECK(!merkle_validate_and_insert_proofs(tree, 11, e, proofs));
+
+	// make sure tree was correctly restored
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       ah,
+	  o,    o,   o,    o,
+	o, o, o, o,o, o, o, o}));
+}
+
+
+TORRENT_TEST(validate_and_insert_proofs_no_uncles)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs;
+
+	TEST_CHECK(!merkle_validate_and_insert_proofs(tree, 1, ad, proofs));
+
+	// make sure tree was correctly restored
+	TEST_CHECK((tree == v{
+	          ah,
+	      o,        o,
+	  o,    o,   o,    o,
+	o, o, o, o,o, o, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_root)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs;
+
+	// this is just attempting to prove the root, which is ok
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 0, ah, proofs));
+
+	// nothing happens to the tree in this case, we already had the root
+	TEST_CHECK((tree == v{
+	          ah,
+	      o,        o,
+	  o,    o,   o,    o,
+	o, o, o, o,o, o, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_root_fail)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs;
+
+	// this is just attempting to prove the root, but with the wrong hash
+	TEST_CHECK(!merkle_validate_and_insert_proofs(tree, 0, a, proofs));
+
+	// nothing happens to the tree in this case
+	TEST_CHECK((tree == v{
+	          ah,
+	      o,        o,
+	  o,    o,   o,    o,
+	o, o, o, o,o, o, o, o}));
+}
+
+TORRENT_TEST(validate_and_insert_proofs_too_many_uncles)
+{
+// full tree:
+//       ah
+//    ad      eh
+//  ab  cd  ef  gh
+// a b c d  e f g h
+
+	v tree(15);
+	tree[0] = ah;
+
+	v const proofs{f, gh, ad, a, b, c , d};
+
+	TEST_CHECK(merkle_validate_and_insert_proofs(tree, 11, e, proofs));
+	TEST_CHECK((tree == v{
+	          ah,
+	     ad,       eh,
+	  o,    o,  ef,   gh,
+	o, o, o, o,e, f, o, o}));
 }

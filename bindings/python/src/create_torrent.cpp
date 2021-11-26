@@ -8,6 +8,7 @@
 #include "libtorrent/torrent_info.hpp"
 #include <libtorrent/version.hpp>
 #include "bytes.hpp"
+#include "gil.hpp"
 
 using namespace boost::python;
 using namespace lt;
@@ -62,7 +63,8 @@ namespace
 #if TORRENT_ABI_VERSION == 1
     void add_file_deprecated(file_storage& ct, file_entry const& fe)
     {
-       ct.add_file(fe);
+        python_deprecated("this overload of add_file() is deprecated");
+        ct.add_file(fe);
     }
 
     struct FileIter
@@ -98,7 +100,10 @@ namespace
     };
 
     FileIter begin_files(file_storage const& self)
-    { return FileIter(self, file_index_t(0)); }
+    {
+        python_deprecated("__iter__ is deprecated");
+        return FileIter(self, file_index_t(0));
+    }
 
     FileIter end_files(file_storage const& self)
     { return FileIter(self, self.end_file()); }
@@ -154,18 +159,27 @@ void bind_create_torrent()
         .def("add_file", add_file, (arg("path"), arg("size"), arg("flags") = 0, arg("mtime") = 0, arg("linkpath") = ""))
         .def("num_files", &file_storage::num_files)
 #if TORRENT_ABI_VERSION == 1
-        .def("at", at)
+        .def("at", depr(at))
         .def("add_file", add_file_deprecated, arg("entry"))
         .def("__iter__", boost::python::range(&begin_files, &end_files))
-        .def("__len__", &file_storage::num_files)
+        .def("__len__", depr(&file_storage::num_files))
 #endif // TORRENT_ABI_VERSION
         .def("hash", file_storage_hash)
         .def("symlink", file_storage_symlink)
         .def("file_path", file_storage_file_path, (arg("idx"), arg("save_path") = ""))
         .def("file_name", file_storage_file_name)
         .def("file_size", file_storage_file_size)
+        .def("root", &file_storage::root)
         .def("file_offset", file_storage_file_offset)
         .def("file_flags", file_storage_file_flags)
+
+        .def("file_index_for_root", &file_storage::file_index_for_root)
+        .def("piece_index_at_file", &file_storage::piece_index_at_file)
+        .def("file_index_at_piece", &file_storage::file_index_at_piece)
+        .def("file_index_at_offset", &file_storage::file_index_at_offset)
+        .def("file_absolute_path", &file_storage::file_absolute_path)
+
+        .def("v2", &file_storage::v2)
 
         .def("total_size", &file_storage::total_size)
         .def("set_num_pieces", &file_storage::set_num_pieces)

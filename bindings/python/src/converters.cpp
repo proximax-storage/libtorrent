@@ -140,12 +140,11 @@ struct to_string_view
 
     static void* convertible(PyObject* x)
     {
-#if PY_VERSION_HEX >= 0x03020000
-        return PyBytes_Check(x)
-#else
-        return PyString_Check(x)
+        return
+#if PY_VERSION_HEX < 0x03020000
+        PyString_Check(x) ? x :
 #endif
-            ? x : PyUnicode_Check(x) ? x : nullptr;
+            PyUnicode_Check(x) ? x : nullptr;
     }
 
     static void construct(PyObject* x, converter::rvalue_from_python_stage1_data* data)
@@ -153,19 +152,18 @@ struct to_string_view
         void* storage = ((converter::rvalue_from_python_storage<
             lt::string_view>*)data)->storage.bytes;
 
-        if (PyUnicode_Check(x))
-        {
-            data->convertible = new (storage) lt::string_view(PyUnicode_AS_DATA(x), PyUnicode_GET_DATA_SIZE(x));
-        }
-        else
+#if PY_VERSION_HEX < 0x03020000
+        if (PyString_Check(x))
         {
             data->convertible = new (storage) lt::string_view(
-#if PY_VERSION_HEX >= 0x03020000
-                PyBytes_AsString(x), PyBytes_Size(x)
-#else
-                PyString_AsString(x), PyString_Size(x)
+                PyString_AsString(x), PyString_Size(x));
+        }
+        else
 #endif
-                );
+        {
+            Py_ssize_t size = 0;
+            char const* unicode = PyUnicode_AsUTF8AndSize(x, &size);
+            data->convertible = new (storage) lt::string_view(unicode, size);
         }
     }
 };
@@ -187,9 +185,7 @@ struct dict_to_map
 {
     dict_to_map()
     {
-        converter::registry::push_back(
-            &convertible, &construct, type_id<std::map<T1, T2>>()
-        );
+        converter::registry::push_back(&convertible, &construct, type_id<Map>());
     }
 
     static void* convertible(PyObject* x)
@@ -199,8 +195,7 @@ struct dict_to_map
 
     static void construct(PyObject* x, converter::rvalue_from_python_stage1_data* data)
     {
-        void* storage = ((converter::rvalue_from_python_storage<
-            std::map<T1, T2>>*)data)->storage.bytes;
+        void* storage = ((converter::rvalue_from_python_storage<Map>*)data)->storage.bytes;
 
         dict o(borrowed(x));
         Map m;
@@ -211,7 +206,7 @@ struct dict_to_map
             T1 const& key = *i;
             m[key] = extract<T2>(o[key]);
         }
-        data->convertible = new (storage) std::map<T1, T2>(m);
+        data->convertible = new (storage) Map(m);
     }
 };
 
@@ -415,6 +410,7 @@ void bind_converters()
     to_python_converter<lt::udp::endpoint, endpoint_to_tuple<lt::udp::endpoint>>();
     to_python_converter<lt::address, address_to_tuple<lt::address>>();
     to_python_converter<std::pair<std::string, int>, pair_to_tuple<std::string, int>>();
+    to_python_converter<std::pair<std::string, std::string>, pair_to_tuple<std::string, std::string>>();
 
     to_python_converter<std::vector<lt::stats_metric>, vector_to_list<std::vector<lt::stats_metric>>>();
     to_python_converter<std::vector<lt::open_file_state>, vector_to_list<std::vector<lt::open_file_state>>>();
@@ -425,6 +421,7 @@ void bind_converters()
     to_python_converter<std::vector<lt::tcp::endpoint>, vector_to_list<std::vector<lt::tcp::endpoint>>>();
     to_python_converter<std::vector<lt::udp::endpoint>, vector_to_list<std::vector<lt::udp::endpoint>>>();
     to_python_converter<std::vector<std::pair<std::string, int>>, vector_to_list<std::vector<std::pair<std::string, int>>>>();
+    to_python_converter<std::vector<std::pair<std::string, std::string>>, vector_to_list<std::vector<std::pair<std::string, std::string>>>>();
 
     to_python_converter<lt::typed_bitfield<lt::piece_index_t>, bitfield_to_list<lt::typed_bitfield<lt::piece_index_t>>>();
     to_python_converter<lt::bitfield, bitfield_to_list<lt::bitfield>>();
@@ -482,6 +479,10 @@ void bind_converters()
 #if TORRENT_ABI_VERSION == 1
     to_python_converter<lt::aux::noexcept_movable<std::vector<char>>, vector_to_list<lt::aux::noexcept_movable<std::vector<char>>>>();
     list_to_vector<lt::aux::noexcept_movable<std::vector<char>>>();
+
+#ifndef TORRENT_DISABLE_DHT
+    to_python_converter<std::vector<lt::dht_lookup>, vector_to_list<std::vector<lt::dht_lookup>>>();
+#endif
 #endif
 
     // python -> C++ conversions
@@ -497,6 +498,7 @@ void bind_converters()
     list_to_vector<std::vector<lt::tcp::endpoint>>();
     list_to_vector<std::vector<lt::udp::endpoint>>();
     list_to_vector<std::vector<std::pair<std::string, int>>>();
+    list_to_vector<std::vector<std::pair<std::string, std::string>>>();
 
     // work-around types
     list_to_vector<lt::aux::noexcept_movable<std::vector<int>>>();
@@ -505,6 +507,7 @@ void bind_converters()
     list_to_vector<lt::aux::noexcept_movable<std::vector<lt::tcp::endpoint>>>();
     list_to_vector<lt::aux::noexcept_movable<std::vector<lt::udp::endpoint>>>();
     list_to_vector<lt::aux::noexcept_movable<std::vector<std::pair<std::string, int>>>>();
+    list_to_vector<lt::aux::noexcept_movable<std::vector<lt::sha1_hash>>>();
     dict_to_map<lt::piece_index_t, lt::bitfield, lt::aux::noexcept_movable<std::map<lt::piece_index_t, lt::bitfield>>>();
     dict_to_map<lt::file_index_t, std::string, lt::aux::noexcept_movable<std::map<lt::file_index_t, std::string>>>();
 
@@ -546,4 +549,5 @@ void bind_converters()
     to_bitfield_flag<lt::reannounce_flags_t>();
     to_string_view();
     to_bitfield_flag<lt::session_flags_t>();
+    to_bitfield_flag<lt::file_progress_flags_t>();
 }
