@@ -803,6 +803,10 @@ namespace {
         std::shared_ptr<torrent> torrent = associated_torrent().lock();
         TORRENT_ASSERT(torrent);
         std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+        if( !delegate )
+        {
+            return;
+        }
         m_dbgOurPeerName = delegate->dbgOurPeerName();
 
         // delegate must be assigned in Session creator
@@ -1125,6 +1129,10 @@ namespace {
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+            if( !delegate )
+            {
+                return;
+            }
 
             if ( !delegate->verifyReceipt( m_transactionHash,       // download channel id
                                            m_peer_public_key,       // receiver public key
@@ -1275,6 +1283,10 @@ namespace {
         std::shared_ptr<torrent> torrent = associated_torrent().lock();
         TORRENT_ASSERT(torrent);
         std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+        if( !delegate )
+        {
+            return;
+        }
 
         delegate->onPieceReceived( m_transactionHash, m_peer_public_key, piece_bytes);
 #endif
@@ -2262,6 +2274,10 @@ namespace {
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+            if( !delegate )
+            {
+                return;
+            }
 
             if ( !delegate->verifyHandshake( reinterpret_cast<const uint8_t*>(pid().data()), pid().size(),
                                     m_peer_public_key,
@@ -2476,7 +2492,11 @@ namespace {
             TORRENT_ASSERT(torrent);
 
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-            
+            if( !delegate )
+            {
+                return;
+            }
+
             delegate->onPieceRequest( m_transactionHash, m_peer_public_key, r.length );
 
             delegate->signReceipt( m_transactionHash,
@@ -2745,6 +2765,10 @@ namespace {
             std::shared_ptr<torrent> torrent = associated_torrent().lock();
             TORRENT_ASSERT(torrent);
             std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+            if( !delegate )
+            {
+                return;
+            }
 
             std::array<uint8_t,64> signature;
             delegate->signHandshake( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()),
@@ -3803,7 +3827,11 @@ namespace {
                 // save dbg session name
                 std::shared_ptr<torrent> torrent = associated_torrent().lock();
                 std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-    
+                if( !delegate )
+                {
+                    return;
+                }
+
                 // Save our public key for this peer connection
                 std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
 
@@ -4153,7 +4181,8 @@ namespace {
 		    {
                 std::shared_ptr<torrent> torrent = associated_torrent().lock();
                 std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                delegate->onPieceSent( m_transactionHash, m_peer_public_key, amount_payload );
+                if ( delegate )
+                    delegate->onPieceSent( m_transactionHash, m_peer_public_key, amount_payload );
 		    }
 #endif
 			std::shared_ptr<torrent> t = associated_torrent().lock();
