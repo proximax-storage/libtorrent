@@ -3878,15 +3878,13 @@ namespace {
                 
                 {
                     bool isPeerAReplicator;
-                    if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
+                    if ( is_outgoing() && !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
                     {
-                        if ( is_outgoing() )
-                        {
-                            std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
-                            
-                            //todo? - errors::error_code_max, operation_t::unknown
-                            disconnect( errors::error_code_max, operation_t::unknown );
-                        }
+                        std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
+                        
+                        //todo? - errors::error_code_max, operation_t::unknown
+                        disconnect( errors::reserved, operation_t::unknown );
+                        return;
                     }
 
                     m_isDownloadUnlimited = !delegate->isClient() && isPeerAReplicator;
