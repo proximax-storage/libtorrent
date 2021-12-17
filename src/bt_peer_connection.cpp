@@ -3877,7 +3877,7 @@ namespace {
 //                            << std::endl << std::flush;
                 
                 {
-                    bool isPeerAReplicator;
+                    bool isPeerAReplicator = false;
                     if ( is_outgoing() && !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
                     {
                         std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
