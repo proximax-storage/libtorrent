@@ -84,7 +84,7 @@ class session_delegate {
         // It will be called by sender,
         // when a piece request received
         // (to accumulate requesting data size)
-        virtual bool onPieceRequestReceived( const std::array<uint8_t,32>&  transactionHash,
+        virtual void onPieceRequestReceived( const std::array<uint8_t,32>&  transactionHash,
                                              const std::array<uint8_t,32>&  receiverPublicKey,
                                              uint64_t                       pieceSize ) = 0;
 
@@ -123,9 +123,9 @@ class session_delegate {
                                   uint64_t                      downloadedSize,
                                   std::array<uint8_t,64>&       outSignature ) = 0;
 
-        // It will be called to verify receipt
+        // It will be called to verify receipt and then accept it
         // (must be implemented by DownloadLimiter)
-        virtual bool verifyReceipt( const std::array<uint8_t,32>&  downloadChannelId,
+        virtual bool acceptReceipt( const std::array<uint8_t,32>&  downloadChannelId,
                                     const std::array<uint8_t,32>&  clientPublicKey,
                                     const std::array<uint8_t,32>&  replicatorPublicKey,
                                     uint64_t                       downloadedSize,

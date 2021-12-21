@@ -302,7 +302,7 @@ namespace aux {
         void setDelegate( std::weak_ptr<session_delegate> delegate );
         std::weak_ptr<session_delegate> delegate();
 
-        const char* m_dbgOurPeerName = "undefined";
+        std::string m_dbgOurPeerName = "undefined";
 #endif
 	};
 

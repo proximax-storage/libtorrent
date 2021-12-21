@@ -1134,53 +1134,41 @@ namespace {
                 return;
             }
 
-            if ( !delegate->verifyReceipt( m_transactionHash,       // download channel id
-                                           m_peer_public_key,       // receiver public key
-                                           delegate->publicKey(),   // sender public key
-                                           downloadedSize, signature ) )
+            delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
+                                              m_peer_public_key,    // receiver public key
+                                              r.length );
+
+            if ( !m_isDownloadUnlimited )
             {
-                //todo ignore piece request?
-                std::cerr << "ERROR! Invalid receipt" << std::endl << std::flush;
-                std::cerr << delegate->dbgOurPeerName() << " request from : " << (int)m_peer_public_key[0] << std::endl << std::flush;
-                assert(0);
+
+                delegate->acceptReceipt( m_transactionHash,             // download channel id
+                                         m_peer_public_key,       // receiver public key
+                                         delegate->publicKey(),   // sender public key
+                                         downloadedSize, signature );
+
+                // check receipt limit
+                if ( !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
+                {
+                    // ignore request
+                    std::cerr << "checkDownloadLimit failed: outgoing:" << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
+                    << " from: "  << (int)m_peer_public_key[0]
+                    << " hash: "  << (int)m_transactionHash[0]
+                    << " flags: " << torrent->m_siriusFlags
+                    << std::endl << std::flush;
+
+                    std::cout << std::endl;
+
+                    //todo log?
+                    //todo disconnect?
+                    disconnect( errors::reserved, operation_t::unknown, peer_error );
+                    return;
+                }
+
+                delegate->sendReceiptToOtherReplicators( m_transactionHash,
+                                                         m_peer_public_key,      // receiver public key
+                                                         downloadedSize,
+                                                         signature );
             }
-            
-            if ( !delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
-                                                    m_peer_public_key,    // receiver public key
-                                                    r.length ) )
-            {
-                std::cerr << "Piece request refused: " << is_outgoing() << ": " << delegate->dbgOurPeerName()
-                            << " from: "  << (int)m_peer_public_key[0]
-                            << " hash: "  << (int)m_transactionHash[0]
-                            << " flags: " << torrent->m_siriusFlags
-                            << std::endl << std::flush;
-                disconnect( errors::reserved, operation_t::unknown, peer_error );
-                return;
-
-            }
-            
-            // check receipt limit
-            if ( !m_isDownloadUnlimited && !delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
-            {
-                // ignore request
-                std::cerr << "checkDownloadLimit failed: outgoing:" << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
-                            << " from: "  << (int)m_peer_public_key[0]
-                            << " hash: "  << (int)m_transactionHash[0]
-                            << " flags: " << torrent->m_siriusFlags
-                            << std::endl << std::flush;
-
-                std::cout << std::endl;
-
-                //todo log?
-                //todo disconnect?
-                disconnect( errors::reserved, operation_t::unknown, peer_error );
-                return;
-            }
-
-            delegate->sendReceiptToOtherReplicators( m_transactionHash,
-                                                     m_peer_public_key,      // receiver public key
-                                                     downloadedSize,
-                                                     signature );
         }
 #else
         peer_request r;
@@ -3878,10 +3866,26 @@ namespace {
                 
                 {
                     bool isPeerAReplicator = false;
-                    if ( is_outgoing() && !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
+                    if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
                     {
-                        std::cerr << "ERROR? connection is not accepted '" << delegate->dbgOurPeerName() << "'" << std::endl;
-                        
+                        if ((int) m_peer_public_key[0] == 131)
+                        {
+                            delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator );
+                        }
+
+                        std::cerr << "ERROR? connection is not accepted '"
+                                  << delegate->dbgOurPeerName()
+                                  << " "
+                                  << "key "
+                                  << (int) m_peer_public_key[0]
+                                  << "hash "
+                                  << (int) m_transactionHash[0]
+                                  << " "
+                                  << m_remote.address().to_string()
+                                  << " "
+                                  << m_remote.port()
+                                  << std::endl;
+
                         //todo? - errors::error_code_max, operation_t::unknown
                         disconnect( errors::reserved, operation_t::unknown );
                         return;
