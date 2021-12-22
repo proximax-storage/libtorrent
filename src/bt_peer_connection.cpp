@@ -823,18 +823,41 @@ namespace {
         }
         else if ( torrent->m_siriusFlags & sf_is_replicator )
         {
-            // our peer is replicator
-            if ( torrent->m_transactionHash )
-                std::memcpy(ptr, torrent->m_transactionHash.value().data(), 32);
+            if ( torrent->m_downloadHash )
+            {
+                std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
+                m_transactionHash = *torrent->m_downloadHash;
+
+//                std::cerr << "(1) write_handshake: " << delegate->dbgOurPeerName() <<
+//                          " is_outgoing: " << is_outgoing() <<
+//                          " hash: " << (int) m_transactionHash[0] <<
+//                          " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
+//                          std::endl;
+            }
             else
-                std::memset(ptr, 0xff, 32);
+            {
+                // our peer is replicator and he does not know client 'channelId'
+//                std::cerr << "(2) write_handshake: " << delegate->dbgOurPeerName() <<
+//                          " is_outgoing: " << is_outgoing() <<
+//                          " hash: " << (int) m_transactionHash[0] <<
+//                          " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
+//                          std::endl;
+
+                std::memcpy(ptr, m_transactionHash.data(), 32);
+            }
         }
         else
         {
             // our peer is client which downloads data
-            assert( torrent->m_transactionHash );
-            std::memcpy(ptr, torrent->m_transactionHash.value().data(), 32);
-            m_transactionHash = *torrent->m_transactionHash;
+            assert( torrent->m_downloadHash );
+            std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
+            m_transactionHash = *torrent->m_downloadHash;
+
+//            std::cerr << "(3) write_handshake: " << delegate->dbgOurPeerName() <<
+//                      " is_outgoing: " << is_outgoing() <<
+//                      " hash: " << (int) m_transactionHash[0] <<
+//                      " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
+//                      std::endl;
         }
         ptr += 32;
 
@@ -1141,7 +1164,7 @@ namespace {
             if ( !m_isDownloadUnlimited )
             {
 
-                delegate->acceptReceipt( m_transactionHash,             // download channel id
+                delegate->acceptReceipt( m_transactionHash,       // download channel id
                                          m_peer_public_key,       // receiver public key
                                          delegate->publicKey(),   // sender public key
                                          downloadedSize, signature );
@@ -3820,59 +3843,37 @@ namespace {
                     return;
                 }
 
-                // Save our public key for this peer connection
+                // Save public key of the other peer
                 std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
 
-                //std::cerr << "received handshake_1 from " << (int)m_peer_public_key[0] << " to " << (int)delegate->publicKey()[0] << std::endl;
-
-//                if ( (torrent->m_siriusFlags & sf_is_replicator) || (torrent->m_siriusFlags & sf_has_modify_data) )
-                if ( !(torrent->m_siriusFlags & sf_is_receiver) )
+                // Save channelTx or modifyTx
+                if ( torrent->m_downloadHash )
+                {
+                    m_transactionHash = *torrent->m_downloadHash;
+//                    std::cerr << "(1) rd_handshake: " << delegate->dbgOurPeerName() <<
+//                              " is_outgoing: " << is_outgoing() <<
+//                              " hash: " << (int) m_transactionHash[0] <<
+//                              " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
+//                              std::endl;
+                }
+                else
                 {
                     // Save download channel id (or modify drive transaction hash)
                     // check transaction hash?
                     std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32+32, m_transactionHash.data());
-
-                    //                    std::cerr << is_outgoing() << " established? '" << delegate->dbgOurPeerName()
-                    //                                << " m_transactionHash : std::copy "
-                    //                                << std::endl << std::flush;
-                }
-                else
-                {
-                    // our peer is client and it downloading some torrent
-                    // (it must have proper 'torrent->m_transactionHash')
-                    if( !torrent->m_transactionHash )
-                    {
-                        std::cerr << "ERROR! m_transactionHash was not set by '" << delegate->dbgOurPeerName() << "'" << std::endl;
-                        assert(0);
-                        //todo disconnect(errors::, operation_t::);
-                    }
-                    else
-                    {
-                        m_transactionHash = *torrent->m_transactionHash;
-
-//                        std::cerr << is_outgoing() << " established? '" << delegate->dbgOurPeerName()
-//                                    << " m_transactionHash = *torrent->m_transactionHash "
-//                                    << std::endl << std::flush;
-                    }
+//                    std::cerr << "(2) rd_handshake: " << delegate->dbgOurPeerName() <<
+//                              " is_outgoing: " << is_outgoing() <<
+//                              " hash: " << (int) m_transactionHash[0] <<
+//                              " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
+//                              std::endl;
                 }
                 
-                //std::cerr << "'" << delegate->dbgOurPeerName() << "' m_transactionHash: " << int(m_transactionHash[0]) << std::endl;
-
-//                std::cerr << "outgoing:" << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
-//                            << " from: "  << (int)m_peer_public_key[0]
-//                            << " hash: "  << (int)m_transactionHash[0]
-//                            << " flags: " << torrent->m_siriusFlags
-//                            << std::endl << std::flush;
-                
+                // Check if DownloadUnlimited
                 {
                     bool isPeerAReplicator = false;
-                    if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
+                    if ( !(torrent->m_siriusFlags & sf_is_receiver) &&
+                         !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
                     {
-                        if ((int) m_peer_public_key[0] == 131)
-                        {
-                            delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator );
-                        }
-
                         std::cerr << "ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
                                   << " "
@@ -3893,21 +3894,15 @@ namespace {
 
                     m_isDownloadUnlimited = !delegate->isClient() && isPeerAReplicator;
                 }
-//                std::cerr << is_outgoing() << " peer connection established: " << delegate->dbgOurPeerName()
-//                            << " from: "  << (int)m_peer_public_key[0]
-//                            << " hash: "  << (int)m_transactionHash[0]
-//                            << " m_isDownloadUnlimited: " << m_isDownloadUnlimited
-//                            << std::endl << std::flush;
             }
 
+            // Save already downloaded size (Not used?)
             uint64_t downloadedSize;
             std::copy(recv_buffer.begin() + 32+32, recv_buffer.begin() + 32+32+8, &downloadedSize);
 
             // Get peer id (it is a random sequence)
             peer_id pid;
             std::copy(recv_buffer.begin() + 32+32+8, recv_buffer.begin() + 32+32+8 + 20, pid.data());
-//            std::cerr << "<<<<<[read pid] '" << m_dbgOurPeerName << "' pid: " << pid << std::endl << std::flush;
-//            std::cerr << "<<<<<[rd pkey] '" << toString(m_peer_public_key) << std::endl << std::flush;
 
 #else
 			peer_id pid;

@@ -1799,7 +1799,7 @@ namespace libtorrent {
         
         // It is OPTIONAL, because now replicator does not know 'download channel id'
         // when it adds torrent to session
-        std::optional<std::array<uint8_t,32>>   m_transactionHash;
+        std::optional<std::array<uint8_t,32>>   m_downloadHash;
         
         uint64_t                                m_downloadLimit; // for modify drive - all data size
         

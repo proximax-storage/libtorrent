@@ -244,7 +244,7 @@ bool is_downloading_state(int const st)
 		, m_complete_sent(false)
 #ifdef SIRIUS_DRIVE_MULTI
         ,m_siriusFlags( p.m_siriusFlags )
-        ,m_transactionHash( p.m_transactionHash )
+        ,m_downloadHash( p.m_transactionHash )
         ,m_downloadLimit( p.m_downloadLimit )
         ,m_modify_end_timer(ses.get_context())
 #endif
@@ -5966,8 +5966,8 @@ namespace {
             if ( m_outgoing_pids.size() == 0 )
             {
                 std::shared_ptr<session_delegate> delegate = session().delegate().lock();
-                if ( delegate && m_transactionHash )
-                    delegate->onAllOutgoingConnectionsClosed( *m_transactionHash );
+                if ( delegate && m_downloadHash )
+                    delegate->onAllOutgoingConnectionsClosed( *m_downloadHash );
 
 //                m_modify_end_timer.expires_after(std::chrono::milliseconds(1000));
 //                m_modify_end_timer.async_wait([self = shared_from_this()](error_code const& e)
