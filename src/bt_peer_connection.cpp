@@ -3871,8 +3871,8 @@ namespace {
                 // Check if DownloadUnlimited
                 {
                     bool isPeerAReplicator = false;
-                    if ( !(torrent->m_siriusFlags & sf_is_receiver) &&
-                         !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) )
+                    if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) &&
+                            !(torrent->m_siriusFlags & sf_is_receiver))
                     {
                         std::cerr << "ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
