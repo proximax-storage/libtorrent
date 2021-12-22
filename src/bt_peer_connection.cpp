@@ -3874,6 +3874,7 @@ namespace {
                     if ( !delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) &&
                             !(torrent->m_siriusFlags & sf_is_receiver))
                     {
+                        std::cerr << "info_hash:" << torrent->info_hash().v2 << std::endl;
                         std::cerr << "ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
                                   << " "
