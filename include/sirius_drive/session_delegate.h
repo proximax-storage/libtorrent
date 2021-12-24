@@ -74,6 +74,14 @@ class session_delegate {
             // 'client' ignores this call
         }
 
+        // will be called by libtorrent pugin when new replicator or client endpoint is discovered
+        // (must be implemented by DefaultReplicator)
+        virtual void onEndpointDiscovered(const std::array<uint8_t, 32>& key,
+                                          const tcp::endpoint& endpoint)
+        {
+            // 'client' ignores this call
+        }
+
         // It will be called by client (or replicator-receiver),
         // when a piece is requested by receiver
         // (to accumulate requested data size; now it is not used)
