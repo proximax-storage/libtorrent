@@ -123,6 +123,24 @@ class session_delegate {
                                       const std::array<uint8_t,32>&  publicKey,
                                       const std::array<uint8_t,64>&  signature ) = 0;
 
+//        // It will be called to sign random sequence (for handshake)
+//        virtual void signMutableItem( const uint8_t*              bytes,
+//                                    size_t                      size,
+//                                    std::array<uint8_t,64>&     outSignature ) = 0;
+
+        // It will be called to verify handshake
+        virtual bool verifyMutableItem( const std::vector<char>& value,
+                                        const int64_t& seq,
+                                        const std::string& salt,
+                                        const std::array<uint8_t,32>& pk,
+                                        const std::array<uint8_t,64>& sig ) = 0;
+
+        // It will be called to verify handshake
+        virtual void signMutableItem( const std::vector<char>& value,
+                                      const int64_t& seq,
+                                      const std::string& salt,
+                                      std::array<uint8_t,64>& sig ) = 0;
+
         // It will be called to sign receipt
         // (must be implemented by ClientSession)
         virtual void signReceipt( const std::array<uint8_t,32>& downloadChannelId,

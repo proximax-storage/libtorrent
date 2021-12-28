@@ -780,6 +780,14 @@ namespace aux {
 			bool on_dht_request(string_view query
 				, dht::msg const& request, entry& response) override;
 
+#ifdef SIRIUS_DRIVE_MULTI
+			bool verify_mutable_item( span<char const> v,
+                                                    span<char const> salt,
+                                                    dht::sequence_number seq,
+                                                    dht::public_key const& pk,
+                                                    dht::signature const& sig ) override;
+#endif
+
 			void set_external_address(tcp::endpoint const& local_endpoint
 				, address const& ip
 				, ip_source_t source_type, address const& source) override;

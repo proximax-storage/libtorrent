@@ -41,6 +41,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/kademlia/msg.hpp"
 #include "libtorrent/aux_/session_udp_sockets.hpp" // for transport
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "types.hpp"
+#endif
+
 namespace libtorrent {
 
 class entry;
@@ -90,6 +94,13 @@ namespace dht {
 		virtual void announce(sha1_hash const& ih, address const& addr, int port) = 0;
 		virtual bool on_dht_request(string_view query
 			, dht::msg const& request, entry& response) = 0;
+#ifdef SIRIUS_DRIVE_MULTI
+		virtual bool verify_mutable_item( span<char const> v,
+                                          span<char const> salt,
+                                          sequence_number seq,
+                                          public_key const& pk,
+                                          signature const& sig) = 0;
+#endif
 
 	protected:
 		~dht_observer() = default;
