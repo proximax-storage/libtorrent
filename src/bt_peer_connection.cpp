@@ -2296,6 +2296,10 @@ namespace {
             {
                 disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
             }
+            else
+            {
+                delegate->onEndpointDiscovered(m_peer_public_key, m_remote);
+            }
         }
 #endif
 

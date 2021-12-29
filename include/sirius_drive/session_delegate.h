@@ -74,6 +74,14 @@ class session_delegate {
             // 'client' ignores this call
         }
 
+        // will be called by libtorrent pugin when new replicator or client endpoint is discovered
+        // (must be implemented by DefaultReplicator)
+        virtual void onEndpointDiscovered(const std::array<uint8_t, 32>& key,
+                                          const tcp::endpoint& endpoint)
+        {
+            // 'client' ignores this call
+        }
+
         // It will be called by client (or replicator-receiver),
         // when a piece is requested by receiver
         // (to accumulate requested data size; now it is not used)
@@ -114,6 +122,24 @@ class session_delegate {
                                       size_t                         size,
                                       const std::array<uint8_t,32>&  publicKey,
                                       const std::array<uint8_t,64>&  signature ) = 0;
+
+//        // It will be called to sign random sequence (for handshake)
+//        virtual void signMutableItem( const uint8_t*              bytes,
+//                                    size_t                      size,
+//                                    std::array<uint8_t,64>&     outSignature ) = 0;
+
+        // It will be called to verify handshake
+        virtual bool verifyMutableItem( const std::vector<char>& value,
+                                        const int64_t& seq,
+                                        const std::string& salt,
+                                        const std::array<uint8_t,32>& pk,
+                                        const std::array<uint8_t,64>& sig ) = 0;
+
+        // It will be called to verify handshake
+        virtual void signMutableItem( const std::vector<char>& value,
+                                      const int64_t& seq,
+                                      const std::string& salt,
+                                      std::array<uint8_t,64>& sig ) = 0;
 
         // It will be called to sign receipt
         // (must be implemented by ClientSession)

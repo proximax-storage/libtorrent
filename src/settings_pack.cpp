@@ -139,9 +139,9 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(proxy_password, "", &session_impl::update_proxy),
 		SET(i2p_hostname, "", &session_impl::update_i2p_bridge),
 		SET(peer_fingerprint, "-LT2040-", nullptr),
-#ifndef SIRIUS_DRIVE
-		SET(dht_bootstrap_nodes, "dht.libtorrent.org:25401", &session_impl::update_dht_bootstrap_nodes)
-#endif
+//#ifndef SIRIUS_DRIVE
+        SET(dht_bootstrap_nodes, "10.168.2.200:5550", &session_impl::update_dht_bootstrap_nodes)
+//#endif
 	}});
 
 	CONSTEXPR_SETTINGS
