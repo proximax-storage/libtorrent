@@ -494,7 +494,7 @@ list(TRANSFORM try_signal_sources PREPEND "deps/try_signal/")
 list(TRANSFORM sirius_drive PREPEND "include/sirius_drive/")
 
 # these options control target creation and thus have to be declared before the add_library() call
-feature_option(BUILD_SHARED_LIBS "build libtorrent as a shared library" ON)
+feature_option(TORRENT_SHARED_LIB "build libtorrent as a shared library" ON)
 feature_option(static_runtime "build libtorrent with static runtime" OFF)
 
 find_public_dependency(Threads REQUIRED)
@@ -560,11 +560,13 @@ if(static_runtime)
 	set(OPENSSL_MSVC_STATIC_RT ON)
 endif()
 
-if (NOT BUILD_SHARED_LIBS)
+if (NOT TORRENT_SHARED_LIB)
 	set(Boost_USE_STATIC_LIBS ON)
 	set(OPENSSL_USE_STATIC_LIBS ON)
 endif()
 
+set(BUILD_SHARED_LIBS_COPY BUILD_SHARED_LIBS)
+set(BUILD_SHARED_LIBS TORRENT_SHARED_LIB)
 add_library(torrent-sirius
 	${sources}
 	${try_signal_sources}
@@ -573,6 +575,7 @@ add_library(torrent-sirius
 	${libtorrent_aux_include_files}
 	${sirius_drive}
 )
+set(BUILD_SHARED_LIBS BUILD_SHARED_LIBS_COPY)
 
 # C++ 14 support is required
 target_compile_features(torrent-sirius
@@ -589,7 +592,7 @@ target_compile_features(torrent-sirius
 		cxx_variable_templates
 )
 
-if (BUILD_SHARED_LIBS)
+if (TORRENT_SHARED_LIB)
 	target_compile_definitions(torrent-sirius
 		PRIVATE TORRENT_BUILDING_SHARED
 		INTERFACE TORRENT_LINKING_SHARED
