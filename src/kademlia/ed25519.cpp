@@ -62,6 +62,9 @@ namespace libtorrent { namespace dht {
 	signature ed25519_sign(span<char const> msg
 		, public_key const& pk, secret_key const& sk)
 	{
+#ifdef SIRIUS_DRIVE_MULTI
+	    TORRENT_ASSERT(0);
+#endif
 		signature sig;
 
 		auto const sig_ptr = reinterpret_cast<unsigned char*>(sig.bytes.data());
@@ -77,6 +80,9 @@ namespace libtorrent { namespace dht {
 	bool ed25519_verify(signature const& sig
 		, span<char const> msg, public_key const& pk)
 	{
+#ifdef SIRIUS_DRIVE_MULTI
+	    TORRENT_ASSERT(0);
+#endif
 		auto const sig_ptr = reinterpret_cast<unsigned char const*>(sig.bytes.data());
 		auto const msg_ptr = reinterpret_cast<unsigned char const*>(msg.data());
 		auto const pk_ptr = reinterpret_cast<unsigned char const*>(pk.bytes.data());

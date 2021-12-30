@@ -86,9 +86,14 @@ void get_item::got_data(bdecode_node const& v,
 	// the highest sequence number.
 	if (m_data.empty() || m_data.seq() < seq)
 	{
-		if (!m_data.assign(v, salt_copy, seq, pk, sig))
+	    if (!m_data.assign(v, salt_copy, seq, pk, sig))
 			return;
 
+#ifdef SIRIUS_DRIVE_MULTI
+	    if (!m_node.observer()->verify_mutable_item(v.data_section(), salt_copy, seq, pk, sig)) {
+	        return;
+	    }
+#endif
 		// for get_item, we should call callback when we get data,
 		// even if the date is not authoritative, we can update later.
 		// so caller can get response ASAP without waiting transaction

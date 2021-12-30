@@ -215,8 +215,7 @@ bool obfuscated_get_peers::invoke(observer_ptr o)
 	if (shared_prefix > m_node.m_table.depth() - 4)
 	{
 		m_obfuscated = false;
-		// clear the queried bits on all successful nodes in
-		// our node-list for this traversal algorithm, to
+		// clear the queried bits on all successful nodes in// our node-list for this traversal algorithm, to
 		// allow the get_peers traversal to regress in case
 		// nodes further down end up being dead
 		for (auto const& node : m_results)

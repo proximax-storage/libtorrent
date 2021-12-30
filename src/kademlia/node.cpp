@@ -1062,11 +1062,11 @@ void node::incoming_request(msg const& m, entry& e)
 
 			// msg_keys[4] is the signature, msg_keys[3] is the public key
 #ifdef SIRIUS_DRIVE_MULTI
-            bool verified_mutable_item = observer()->verify_mutable_item(buf, salt, seq, pk, sig);
+			bool verified_mutable_item =  m_observer && m_observer->verify_mutable_item(buf, salt, seq, pk, sig);
 #else
 			bool verified_mutable_item = verify_mutable_item(buf, salt, seq, pk, sig);
 #endif
-			if (!verified_mutable_item)
+			if ( !verified_mutable_item )
 			{
 				m_counters.inc_stats_counter(counters::dht_invalid_put);
 				incoming_error(e, "invalid signature", 206);

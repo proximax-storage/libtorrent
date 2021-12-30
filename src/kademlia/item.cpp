@@ -181,8 +181,10 @@ bool item::assign(bdecode_node const& v, span<char const> salt
 	, sequence_number const seq, public_key const& pk, signature const& sig)
 {
 	TORRENT_ASSERT(v.data_section().size() <= 1000);
+#ifndef SIRIUS_DRIVE_MULTI
 	if (!verify_mutable_item(v.data_section(), salt, seq, pk, sig))
 		return false;
+#endif
 	m_pk = pk;
 	m_sig = sig;
 	if (!salt.empty())

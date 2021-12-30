@@ -6743,7 +6743,7 @@ namespace {
 
 #ifdef SIRIUS_DRIVE_MULTI
 	bool session_impl::verify_mutable_item( span<char const> v,
-                                            span<char const> salt,
+                                            span<char const> aSalt,
                                             dht::sequence_number seq,
                                             dht::public_key const& pk,
                                             dht::signature const& sig )
@@ -6751,15 +6751,14 @@ namespace {
 	    if (auto p = delegate().lock(); p)
 	    {
 	        std::vector<char> value(v.begin(), v.end());
-	        std::string salt(salt.begin(), salt.end());
-	        std::array<uint8_t, 32> key{};
-	        auto& key_bytes = pk.bytes;
-	        std::copy(key_bytes.begin(), key_bytes.end(), key.begin());
-	        std::array<uint8_t, 64> signature{};
-	        auto& sig_bytes = sig.bytes;
-	        std::copy(sig_bytes.begin(), sig_bytes.end(), signature.begin());
+	        std::string salt(aSalt.begin(), aSalt.end());
+	        static_assert( sizeof(pk.bytes) == sizeof(std::array<uint8_t, 32>) );
+	        auto key = *reinterpret_cast<const std::array<uint8_t, 32> *>(&pk.bytes);
+	        static_assert( sizeof(sig.bytes) == sizeof(std::array<uint8_t, 64>) );
+	        auto signature = *reinterpret_cast<const std::array<uint8_t, 64> *>(&sig.bytes);
 	        return p->verifyMutableItem(value, seq.value, salt, key, signature);
 	    }
+	    return false;
     }
 #endif
 
