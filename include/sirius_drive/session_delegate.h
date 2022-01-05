@@ -77,7 +77,7 @@ class session_delegate {
         // will be called by libtorrent pugin when new replicator or client endpoint is discovered
         // (must be implemented by DefaultReplicator)
         virtual void onEndpointDiscovered(const std::array<uint8_t, 32>& key,
-                                          const tcp::endpoint& endpoint)
+                                          const std::optional<tcp::endpoint>& endpoint)
         {
             // 'client' ignores this call
         }
@@ -163,6 +163,9 @@ class session_delegate {
 
         // Replicator/Client public key
         virtual const std::array<uint8_t,32>& publicKey() = 0;
+
+        // Endpoint associated with the key
+        virtual std::optional<boost::asio::ip::tcp::endpoint> getEndpoint( const std::array<uint8_t,32>& key ) = 0;
 
         // It will be called when 'replicator' answers to 'client' (extended handshake)
         //virtual uint64_t receivedSize( const std::array<uint8_t,32>& downloadChannelId ) = 0;

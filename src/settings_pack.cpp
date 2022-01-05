@@ -140,7 +140,7 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(i2p_hostname, "", &session_impl::update_i2p_bridge),
 		SET(peer_fingerprint, "-LT2040-", nullptr),
 //#ifndef SIRIUS_DRIVE
-        SET(dht_bootstrap_nodes, "192.168.2.200:5550", &session_impl::update_dht_bootstrap_nodes)
+        SET(dht_bootstrap_nodes, "dht.libtorrent.org:25401", &session_impl::update_dht_bootstrap_nodes)
 //#endif
 	}});
 
