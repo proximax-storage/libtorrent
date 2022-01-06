@@ -565,7 +565,7 @@ to ``17`` if your project use a newer version of the C++ standard.
 Other build options are:
 
 +-----------------------+---------------------------------------------------+
-| ``BUILD_SHARED_LIBS`` | Defaults ``ON``. Builds libtorrent as a shared    |
+| ``TORRENT_SHARED_LIB``| Defaults ``ON``. Builds libtorrent as a shared    |
 |                       | library.                                          |
 +-----------------------+---------------------------------------------------+
 | ``static_runtime``    | Defaults ``OFF``. Link libtorrent statically      |
