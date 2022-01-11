@@ -179,7 +179,12 @@ class session_delegate {
         virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
 
         // It will be called by 'DefaultSession' class
-        virtual void        onMessageReceived( const std::string& query, const std::string&, const boost::asio::ip::udp::endpoint& source ) = 0;
+        virtual void     onMessageReceived( const std::string& query, const std::string&, const boost::asio::ip::udp::endpoint& source ) = 0;
+
+        virtual bool     isStopped()
+        {
+            return false;
+        }
 
         virtual const char* dbgOurPeerName() = 0;
     };
