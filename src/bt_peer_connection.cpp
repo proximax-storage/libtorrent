@@ -1288,21 +1288,22 @@ namespace {
 			if (is_disconnecting()) return;
 		}
 
+		incoming_piece_fragment(piece_bytes);
+		if (!m_recv_buffer.packet_finished()) return;
+
 #ifdef SIRIUS_DRIVE_MULTI
 #pragma mark --rd-piece--
 
-        std::shared_ptr<torrent> torrent = associated_torrent().lock();
-        TORRENT_ASSERT(torrent);
-        std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-        if( !delegate )
-        {
-            return;
-        }
+		std::shared_ptr<torrent> torrent = associated_torrent().lock();
+		TORRENT_ASSERT(torrent);
+		std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+		if( !delegate )
+		{
+		    return;
+		}
 
-        delegate->onPieceReceived( m_transactionHash, m_peer_public_key, piece_bytes);
+		delegate->onPieceReceived( m_transactionHash, m_peer_public_key, p.length);
 #endif
-		incoming_piece_fragment(piece_bytes);
-		if (!m_recv_buffer.packet_finished()) return;
 
 		incoming_piece(p, recv_buffer.data() + header_size);
 		maybe_send_hash_request();
