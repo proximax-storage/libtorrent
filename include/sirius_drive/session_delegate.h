@@ -51,19 +51,6 @@ class session_delegate {
             return true;
         }
 
-        // will be called from Sesion (that is libtorrent pugin)
-        // when it receives message from another replicator
-        // (must be implemented by DownloadLimiter)
-        virtual void acceptReceiptFromAnotherReplicator( const std::array<uint8_t,32>&  downloadChannelId,
-                                                         const std::array<uint8_t,32>&  clientPublicKey,
-                                                         const std::array<uint8_t,32>&  replicatorPublicKey,
-                                                         uint64_t                       downloadedSize,
-                                                         const std::array<uint8_t,64>&  signature )
-        {
-            // 'client' does nothing
-            return;
-        }
-
         // will be called by libtorrent pugin when replicator receives receipt
         // (must be implemented by DefaultReplicator)
         virtual void sendReceiptToOtherReplicators( const std::array<uint8_t,32>&  downloadChannelId,
@@ -177,9 +164,6 @@ class session_delegate {
         // They will be called when 'client' requests a piece from 'replicator' (handshake)
         virtual uint64_t receivedSize( const std::array<uint8_t,32>&  peerPublicKey ) = 0;
         virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
-
-        // It will be called by 'DefaultSession' class
-        virtual void     onMessageReceived( const std::string& query, const std::string&, const boost::asio::ip::udp::endpoint& source ) = 0;
 
         virtual bool     isStopped()
         {
