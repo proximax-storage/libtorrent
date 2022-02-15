@@ -835,6 +835,7 @@ namespace {
             {
                 std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
                 m_transactionHash = *torrent->m_downloadHash;
+                //std::cerr << "+?+ (1) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
 
 //                std::cerr << "+++ (1) write_handshake: " << delegate->dbgOurPeerName() <<
 //                          " is_outgoing: " << is_outgoing() <<
@@ -860,6 +861,8 @@ namespace {
             assert( torrent->m_downloadHash );
             std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
             m_transactionHash = *torrent->m_downloadHash;
+            //std::cerr << "+?+ (2) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
+
 
 //            std::cerr << "+++ (3) write_handshake: " << delegate->dbgOurPeerName() <<
 //                      " is_outgoing: " << is_outgoing() <<
@@ -3880,9 +3883,11 @@ namespace {
                 std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
 
                 // Save channelTx or modifyTx
-                if ( torrent->m_downloadHash )
+                if ( is_outgoing() && torrent->m_downloadHash )
                 {
                     m_transactionHash = *torrent->m_downloadHash;
+                    //std::cerr << "+?+ (3) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
+
 //                    std::cerr << "+++ (1) rd_handshake: " << delegate->dbgOurPeerName() <<
 //                              " is_outgoing: " << is_outgoing() <<
 //                              " hash: " << (int) m_transactionHash[0] <<
@@ -3903,6 +3908,8 @@ namespace {
                 
                 // Check if DownloadUnlimited
                 {
+                    //std::cerr << "+?+ (?) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
+
                     bool isPeerAReplicator = false;
                     if ( ! delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) &&
                             ! (torrent->m_siriusFlags & sf_is_receiver) )
