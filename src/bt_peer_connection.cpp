@@ -1175,6 +1175,9 @@ namespace {
             if ( !m_isDownloadUnlimited )
             {
 
+                // We do not disconnect peer if Signature is invalid
+                // we only ignore this request
+                // Because 'acceptReceipt' returns false in case of old receipt
                 delegate->acceptReceipt( m_transactionHash,       // download channel id
                                          m_peer_public_key,       // receiver public key
                                          delegate->publicKey(),   // sender public key
