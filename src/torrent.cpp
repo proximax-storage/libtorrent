@@ -111,6 +111,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/ssl.hpp"
 #include "libtorrent/aux_/apply_pad_files.hpp"
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "sirius_drive/session_delegate.h"
+#endif
+
+
 #ifdef TORRENT_SSL_PEERS
 #include "libtorrent/ssl_stream.hpp"
 #endif // TORRENT_SSL_PEERS
@@ -4864,6 +4869,12 @@ namespace {
 		else
 		{
 			alerts().emplace_alert<torrent_deleted_alert>(get_handle(), m_torrent_file->info_hashes());
+#ifdef SIRIUS_DRIVE_MULTI
+            if ( auto delegate = m_ses.delegate().lock(); delegate )
+            {
+                delegate->onTorrentDeleted( get_handle(), m_torrent_file->info_hashes().v2 );
+            }
+#endif
 		}
 	}
 	catch (...) { handle_exception(); }

@@ -23,6 +23,8 @@ class session_delegate {
         // Replicator behavior differs from client
         virtual bool isClient() const = 0;
     
+        virtual void onTorrentDeleted( lt::torrent_handle, lt::sha256_hash ) = 0;
+    
         virtual bool acceptConnection( const std::array<uint8_t,32>&  transactionHash,
                                        const std::array<uint8_t,32>&  peerPublicKey,
                                        bool*                          outIsDownloadUnlimited ) = 0;
