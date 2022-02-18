@@ -4860,7 +4860,14 @@ namespace {
 	{
 		TORRENT_ASSERT(is_single_thread());
 
-		if (error)
+#ifdef SIRIUS_DRIVE_MULTI
+        if ( auto delegate = m_ses.delegate().lock(); delegate )
+        {
+            delegate->onTorrentDeleted( get_handle() );
+        }
+#endif
+
+        if (error)
 		{
 			if (alerts().should_post<torrent_delete_failed_alert>())
 				alerts().emplace_alert<torrent_delete_failed_alert>(get_handle()
@@ -4868,13 +4875,7 @@ namespace {
 		}
 		else
 		{
-			alerts().emplace_alert<torrent_deleted_alert>(get_handle(), m_torrent_file->info_hashes());
-#ifdef SIRIUS_DRIVE_MULTI
-            if ( auto delegate = m_ses.delegate().lock(); delegate )
-            {
-                delegate->onTorrentDeleted( get_handle(), m_torrent_file->info_hashes().v2 );
-            }
-#endif
+            alerts().emplace_alert<torrent_deleted_alert>(get_handle(), m_torrent_file->info_hashes());
 		}
 	}
 	catch (...) { handle_exception(); }
