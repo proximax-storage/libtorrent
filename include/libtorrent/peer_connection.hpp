@@ -1233,9 +1233,10 @@ namespace aux {
 #ifdef SIRIUS_DRIVE_MULTI
 #pragma mark --variables--
     protected:
-        std::array<uint8_t,32> m_peer_public_key;
-        std::array<uint8_t,32> m_transactionHash = {0x0a,0};
-        bool                   m_isDownloadUnlimited = false;
+        std::array<uint8_t,32> m_other_peer_key;
+        std::array<uint8_t,32> m_other_peer_hash        = {0x0a,0};
+        uint32_t               m_otherPeerSiriusFlags   = 0;
+        bool                   m_isDownloadUnlimited    = false;
         const char* m_dbgOurPeerName = "unset";
 #endif
 

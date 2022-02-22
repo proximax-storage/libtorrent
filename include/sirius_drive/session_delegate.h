@@ -12,9 +12,16 @@
 
 namespace libtorrent {
 
-const uint32_t sf_is_replicator     = 0x01;
-const uint32_t sf_is_receiver       = 0x02;
-const uint32_t sf_has_modify_data   = 0x04;
+namespace SiriusFlags {
+    using type = uint8_t;
+    enum : type {
+        none                      = 0x00,
+        peer_is_replicator        = 0x01,
+        replicator_is_receiver    = 0x02,
+        client_has_modify_data    = 0x04,
+        client_is_receiver        = 0x08
+    };
+};
 
 class session_delegate {
     public:
@@ -25,9 +32,20 @@ class session_delegate {
     
         virtual void onTorrentDeleted( lt::torrent_handle ) = 0;
     
-        virtual bool acceptConnection( const std::array<uint8_t,32>&  transactionHash,
-                                       const std::array<uint8_t,32>&  peerPublicKey,
-                                       bool*                          outIsDownloadUnlimited ) = 0;
+        virtual bool acceptClientConnection( const std::array<uint8_t,32>&  channelId,
+                                             const std::array<uint8_t,32>&  peerPublicKey )
+        {
+            // now client ignore connection from other client
+            return false;
+        }
+
+        virtual bool acceptReplicatorConnection( const std::array<uint8_t,32>&  driveKey,
+                                                 const std::array<uint8_t,32>&  peerPublicKey )
+        {
+            //(???)
+            // now client already accpents connection from any replicator ?
+            return false;
+        }
 
         virtual void onDisconnected( const std::array<uint8_t,32>&  transactionHash,
                                      const std::array<uint8_t,32>&  peerPublicKey,
@@ -81,9 +99,13 @@ class session_delegate {
         // It will be called by sender,
         // when a piece request received
         // (to accumulate requesting data size)
-        virtual void onPieceRequestReceived( const std::array<uint8_t,32>&  transactionHash,
-                                             const std::array<uint8_t,32>&  receiverPublicKey,
-                                             uint64_t                       pieceSize ) = 0;
+        virtual void onPieceRequestReceivedFromReplicator( const std::array<uint8_t,32>&  modifyTx,
+                                                           const std::array<uint8_t,32>&  receiverPublicKey,
+                                                           uint64_t                       pieceSize ) = 0;
+    
+        virtual void onPieceRequestReceivedFromClient( const std::array<uint8_t,32>&      transactionHash,
+                                                       const std::array<uint8_t,32>&      receiverPublicKey,
+                                                       uint64_t                           pieceSize ) = 0;
 
         // It will be called by sender,
         // when a piece is sent

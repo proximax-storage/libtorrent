@@ -4446,7 +4446,7 @@ namespace libtorrent {
                 std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
                 if ( delegate )
                 {
-                    delegate->onDisconnected( m_transactionHash, m_peer_public_key, torrent->m_siriusFlags );
+                    delegate->onDisconnected( m_other_peer_hash, m_other_peer_key, torrent->m_siriusFlags );
                 }
             }
         }
@@ -5922,12 +5922,12 @@ namespace libtorrent {
                 {
                     std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
                     
-                    if ( delegate && !delegate->isClient() )
+                    if ( delegate && !delegate->isClient() && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
                     {
                         int payload = m_send_buffer.getSentPayload( bytes_transferred );
                         if ( payload > 0 )
                         {
-                            delegate->onPieceSent( m_transactionHash, m_peer_public_key, payload );
+                            delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, payload );
                         }
                     }
                 }

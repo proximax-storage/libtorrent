@@ -249,12 +249,19 @@ bool is_downloading_state(int const st)
 		, m_complete_sent(false)
 #ifdef SIRIUS_DRIVE_MULTI
         ,m_siriusFlags( p.m_siriusFlags )
-        ,m_downloadHash( p.m_transactionHash )
-        ,m_downloadLimit( p.m_downloadLimit )
         ,m_modify_end_timer(ses.get_context())
 #endif
 	{
-		// we cannot log in the constructor, because it relies on shared_from_this
+#ifdef SIRIUS_DRIVE_MULTI
+        if ( p.m_driveKey )
+            m_driveKey = std::make_unique<std::array<uint8_t,32>>( * p.m_driveKey );
+        if ( p.m_channelId )
+            m_channelId = std::make_unique<std::array<uint8_t,32>>( * p.m_channelId );
+        if ( p.m_modifyTx )
+            m_modifyTx = std::make_unique<std::array<uint8_t,32>>( * p.m_modifyTx );
+#endif
+
+        // we cannot log in the constructor, because it relies on shared_from_this
 		// being initialized, which happens after the constructor returns.
 
 #if TORRENT_USE_UNC_PATHS
@@ -5978,8 +5985,8 @@ namespace {
             if ( m_outgoing_pids.size() == 0 )
             {
                 std::shared_ptr<session_delegate> delegate = session().delegate().lock();
-                if ( delegate && m_downloadHash )
-                    delegate->onAllOutgoingConnectionsClosed( *m_downloadHash );
+                if ( delegate && m_driveKey )
+                    delegate->onAllOutgoingConnectionsClosed( *m_driveKey );
 
 //                m_modify_end_timer.expires_after(std::chrono::milliseconds(1000));
 //                m_modify_end_timer.async_wait([self = shared_from_this()](error_code const& e)

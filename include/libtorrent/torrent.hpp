@@ -1795,14 +1795,17 @@ namespace libtorrent {
 
 #ifdef SIRIUS_DRIVE_MULTI
     public:
-        uint32_t                                m_siriusFlags;
+        SiriusFlags::type                       m_siriusFlags;
         
-        // It is OPTIONAL, because now replicator does not know 'download channel id'
-        // when it adds torrent to session
-        std::optional<std::array<uint8_t,32>>   m_downloadHash;
-        
-        uint64_t                                m_downloadLimit; // for modify drive - all data size
-        
+        // DriveKey be set only in by replicators
+        std::unique_ptr<std::array<uint8_t,32>> m_driveKey = {};
+
+        // ChannelId will be set by client
+        std::unique_ptr<std::array<uint8_t,32>> m_channelId = {}; // every client group has its own streaming channelId
+
+        // ModifyTx could be set by client and replicator
+        std::unique_ptr<std::array<uint8_t,32>> m_modifyTx = {}; // streamId?
+
         deadline_timer                          m_modify_end_timer; //todo not used ?
 #endif
     };

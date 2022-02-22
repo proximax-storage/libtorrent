@@ -812,72 +812,34 @@ namespace {
         // delegate must be assigned in Session creator
         TORRENT_ASSERT(delegate);
 
+        // write publicKey
         std::memcpy(ptr, delegate->publicKey().data(), 32);
         ptr += 32;
 
-        if ( torrent->m_siriusFlags & sf_has_modify_data )
+        // write modifyTx or channelId
+        if ( torrent->m_siriusFlags & SiriusFlags::client_has_modify_data )
         {
             // our peer is client with modify data
-            //std::cerr << delegate->dbgOurPeerName() << " sf_has_modify_data" << std::endl << std::flush;
-            if ( torrent->m_downloadHash )
-            {
-                std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
-                //m_transactionHash = *torrent->m_downloadHash;
-            }
-            else
-            {
-                std::memset(ptr, 0xf0, 32);
-            }
+            TORRENT_ASSERT( torrent->m_modifyTx );
+            std::memcpy(ptr, torrent->m_modifyTx->data(), 32);
         }
-        else if ( torrent->m_siriusFlags & sf_is_replicator )
-        {
-            if ( torrent->m_downloadHash )
-            {
-                std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
-                m_transactionHash = *torrent->m_downloadHash;
-                //std::cerr << "+?+ (1) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
-
-//                std::cerr << "+++ (1) write_handshake: " << delegate->dbgOurPeerName() <<
-//                          " is_outgoing: " << is_outgoing() <<
-//                          " hash: " << (int) m_transactionHash[0] <<
-//                          " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
-//                          std::endl;
-            }
-            else
-            {
-                // our peer is replicator and he does not know client 'channelId'
-//                std::cerr << "+++ (2) write_handshake: " << delegate->dbgOurPeerName() <<
-//                          " is_outgoing: " << is_outgoing() <<
-//                          " hash: " << (int) m_transactionHash[0] <<
-//                          " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
-//                          std::endl;
-
-                std::memcpy(ptr, m_transactionHash.data(), 32);
-            }
-        }
-        else
+        else if ( torrent->m_siriusFlags & SiriusFlags::client_is_receiver )
         {
             // our peer is client which downloads data
-            assert( torrent->m_downloadHash );
-            std::memcpy(ptr, torrent->m_downloadHash.value().data(), 32);
-            m_transactionHash = *torrent->m_downloadHash;
-            //std::cerr << "+?+ (2) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
-
-
-//            std::cerr << "+++ (3) write_handshake: " << delegate->dbgOurPeerName() <<
-//                      " is_outgoing: " << is_outgoing() <<
-//                      " hash: " << (int) m_transactionHash[0] <<
-//                      " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
-//                      std::endl;
+            TORRENT_ASSERT( torrent->m_channelId );
+            std::memcpy(ptr, torrent->m_channelId->data(), 32);
         }
+        else if ( torrent->m_siriusFlags & SiriusFlags::replicator_is_receiver )
+        {
+            // our peer is replicator that could download and upload
+            TORRENT_ASSERT( torrent->m_modifyTx );
+            std::memcpy(ptr, torrent->m_modifyTx->data(), 32);
+        }
+
         ptr += 32;
 
-//todo        if ( (torrent->m_siriusFlags & lt::sf_is_replicator) && !(torrent->m_siriusFlags & lt::sf_is_receiver) )
-//        {
-//            uint64_t uploadedSize = delegate->getUploadedSize( m_transactionHash );
-//            std::memcpy(ptr, &uploadedSize, 8);
-//        }
-        std::memset(ptr, 0, 8);
+        // siriusFlags
+        std::memcpy(ptr, &torrent->m_siriusFlags, sizeof(SiriusFlags::type) );
         ptr += 8;
 #endif
 
@@ -1168,47 +1130,49 @@ namespace {
                 return;
             }
 
-            delegate->onPieceRequestReceived( m_transactionHash,    // download channel id
-                                              m_peer_public_key,    // receiver public key
-                                              r.length );
-
-            if ( !m_isDownloadUnlimited )
+            if ( m_otherPeerSiriusFlags & SiriusFlags::peer_is_replicator )
             {
-
+                delegate->onPieceRequestReceivedFromReplicator( m_other_peer_hash,  // modifyTx
+                                                                m_other_peer_key,   // replicator key
+                                                                r.length );
+            }
+            else
+            {
+                delegate->onPieceRequestReceivedFromClient( m_other_peer_hash,      // channelId
+                                                            m_other_peer_key,       // replicator key
+                                                            r.length );
+            
                 // We do not disconnect peer if Signature is invalid
                 // we only ignore this request
-                // Because 'acceptReceipt' returns false in case of old receipt
-                delegate->acceptReceipt( m_transactionHash,       // download channel id
-                                         m_peer_public_key,       // receiver public key
+                // Because 'acceptReceipt' returns false in case of old receipt also
+                delegate->acceptReceipt( m_other_peer_hash,       // download channel id
+                                         m_other_peer_key,        // receiver public key
                                          delegate->publicKey(),   // sender public key
                                          downloadedSize, signature );
 
                 // check receipt limit
-                if ( ! delegate->checkDownloadLimit( signature, m_transactionHash, downloadedSize ) )
+                if ( ! delegate->checkDownloadLimit( signature, m_other_peer_hash, downloadedSize ) )
                 {
                     // ignore request
                     std::cerr << "+++ checkDownloadLimit failed: outgoing:" << is_outgoing()
                     << " peer connection NOT established: " << delegate->dbgOurPeerName()
-                    << " from: "  << (int)m_peer_public_key[0]
-                    << " hash: "  << (int)m_transactionHash[0]
+                    << " from: "  << (int)m_other_peer_key[0]
+                    << " hash: "  << (int)m_other_peer_hash[0]
                     << " flags: " << torrent->m_siriusFlags
                     << std::endl << std::flush;
 
                     std::cout << std::endl;
-
-                    //todo log?
-                    //todo disconnect?
                     disconnect( errors::reserved, operation_t::unknown, peer_error );
                     return;
                 }
 
-                delegate->sendReceiptToOtherReplicators( m_transactionHash,
-                                                         m_peer_public_key,      // receiver public key
+                delegate->sendReceiptToOtherReplicators( m_other_peer_hash,
+                                                         m_other_peer_key,      // receiver public key
                                                          downloadedSize,
                                                          signature );
 //                std::cerr << "+++ rd-request-piece: ACCEPTED outgoing: " << is_outgoing() << " " << delegate->dbgOurPeerName()
-//                << " from: "  << (int)m_peer_public_key[0]
-//                << " hash: "  << (int)m_transactionHash[0]
+//                << " from: "  << (int)m_other_peer_key[0]
+//                << " hash: "  << (int)m_other_peer_hash[0]
 //                << " flags: " << torrent->m_siriusFlags
 //                << std::endl << std::flush;
 
@@ -1323,7 +1287,14 @@ namespace {
 		    return;
 		}
 
-		delegate->onPieceReceived( m_transactionHash, m_peer_public_key, p.length);
+        if (  torrent->m_modifyTx )
+        {
+            delegate->onPieceReceived( *torrent->m_modifyTx, m_other_peer_key, p.length);
+        }
+        else if (  torrent->m_channelId )
+        {
+            //todo?
+        }
 #endif
 
 		incoming_piece(p, recv_buffer.data() + header_size);
@@ -2299,7 +2270,7 @@ namespace {
             const auto signature = *reinterpret_cast<const std::array<uint8_t,64>*>(&signatureStr[0]);
 
 //            std::cerr << "<<><><>> verify by '" << m_dbgOurPeerName << "'" << std::endl;
-//            std::cerr << ">>>> key: " << toString(m_peer_public_key) << std::endl;
+//            std::cerr << ">>>> key: " << toString(m_other_peer_key) << std::endl;
 //            std::cerr << ">>>> pid: " << pid() << std::endl;
 //            std::cerr << ">>>> signature: " << toString(signature) << std::endl << std::endl << std::flush;
 
@@ -2313,13 +2284,13 @@ namespace {
             }
 
             if ( ! delegate->verifyHandshake( reinterpret_cast<const uint8_t*>(pid().data()), pid().size(),
-                                    m_peer_public_key,
+                                    m_other_peer_key,
                                     signature ) )
             {
                 std::cerr << "+++ rd-EXT-handshake-and-verify-it FAILED!!!: " << is_outgoing()
                 << " peer connection established: " << delegate->dbgOurPeerName()
-                << " from: "  << (int)m_peer_public_key[0]
-                << " hash: "  << (int)m_transactionHash[0]
+                << " from: "  << (int)m_other_peer_key[0]
+                << " hash: "  << (int)m_other_peer_hash[0]
                 << " flags: " << torrent->m_siriusFlags
                 << std::endl << std::flush;
 
@@ -2327,11 +2298,11 @@ namespace {
             }
             else
             {
-                delegate->onEndpointDiscovered(m_peer_public_key, m_remote);
+                delegate->onEndpointDiscovered(m_other_peer_key, m_remote);
 //                std::cerr << "+++ rd-EXT-handshake-and-verify-it ACCEPTED: " << is_outgoing()
 //                << " peer connection established: " << delegate->dbgOurPeerName()
-//                << " from: "  << (int)m_peer_public_key[0]
-//                << " hash: "  << (int)m_transactionHash[0]
+//                << " from: "  << (int)m_other_peer_key[0]
+//                << " hash: "  << (int)m_other_peer_hash[0]
 //                << " flags: " << torrent->m_siriusFlags
 //                << std::endl << std::flush;
             }
@@ -2546,14 +2517,31 @@ namespace {
             {
                 return;
             }
+            
+            std::array<uint8_t,32>* hash = nullptr;
+            if ( torrent->m_channelId )
+            {
+                hash = torrent->m_channelId.get();
+            }
+            else if ( torrent->m_modifyTx )
+            {
+                hash = torrent->m_modifyTx.get();
+            }
 
-            delegate->onPieceRequest( m_transactionHash, m_peer_public_key, r.length );
+            if ( hash )
+            {
+                delegate->onPieceRequest( *hash, m_other_peer_key, r.length );
 
-            delegate->signReceipt( m_transactionHash,
-                                   m_peer_public_key, // replicator public key
-                                   delegate->requestedSize( m_peer_public_key ),
-                                   signature );
-
+                delegate->signReceipt( *hash,
+                                       m_other_peer_key, // replicator public key
+                                       delegate->requestedSize( m_other_peer_key ),
+                                       signature );
+            }
+            else
+            {
+                std::cerr << "Internal ERROR!!!" << std::endl;
+            }
+            
             auto local_endpoint = this->local_endpoint();
             this->remote();
 
@@ -2565,7 +2553,7 @@ namespace {
             memcpy(ptr,signature.data(),signature.size());
             ptr += signature.size();
 
-            aux::write_uint64(delegate->requestedSize( m_peer_public_key ), ptr);
+            aux::write_uint64(delegate->requestedSize( m_other_peer_key ), ptr);
 
             aux::write_int32(static_cast<int>(r.piece), ptr);
             aux::write_int32(r.start, ptr);
@@ -2830,12 +2818,12 @@ namespace {
 //            std::cerr << ">>>> our: "       << m_our_peer_id << std::endl << std::flush;
 //            std::cerr << ">>>> signature: " << toString(signature) <<  std::endl << std::endl << std::flush;
 
-            if ( !delegate->verifyHandshake( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()), m_our_peer_id.size(),
-                                    delegate->publicKey(),
-                                    signature ) )
-            {
-                disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
-            }
+//            if ( !delegate->verifyHandshake( reinterpret_cast<const uint8_t*>( m_our_peer_id.data()), m_our_peer_id.size(),
+//                                    delegate->publicKey(),
+//                                    signature ) )
+//            {
+//                disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
+//            }
 
             handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
         }
@@ -3883,48 +3871,26 @@ namespace {
                 }
 
                 // Save public key of the other peer
-                std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_peer_public_key.data());
+                std::copy(recv_buffer.begin(), recv_buffer.begin() + 32, m_other_peer_key.data());
 
-                // Save channelTx or modifyTx
-                if ( is_outgoing() && torrent->m_downloadHash )
-                {
-                    m_transactionHash = *torrent->m_downloadHash;
-                    //std::cerr << "+?+ (3) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
-
-//                    std::cerr << "+++ (1) rd_handshake: " << delegate->dbgOurPeerName() <<
-//                              " is_outgoing: " << is_outgoing() <<
-//                              " hash: " << (int) m_transactionHash[0] <<
-//                              " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
-//                              std::endl;
-                }
-                else
-                {
-                    // Save download channel id (or modify drive transaction hash)
-                    // check transaction hash?
-                    std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32+32, m_transactionHash.data());
-//                    std::cerr << "+++ (2) rd_handshake: " << delegate->dbgOurPeerName() <<
-//                              " is_outgoing: " << is_outgoing() <<
-//                              " hash: " << (int) m_transactionHash[0] <<
-//                              " ip/port "   << m_remote.address().to_string() << "/" << m_remote.port() <<
-//                              std::endl;
-                }
+                // Save channelId or modifyTx
+                std::copy(recv_buffer.begin() + 32, recv_buffer.begin() + 32+32, m_other_peer_hash.data());
                 
-                // Check if DownloadUnlimited
-                {
-                    //std::cerr << "+?+ (?) m_transactionHash: " << delegate->dbgOurPeerName() << " " << int(m_transactionHash[0]) << " " << uint64_t(this) << std::endl;
+                // Save SiriusFlags
+                memcpy( &m_otherPeerSiriusFlags, recv_buffer.begin() + 32+32, sizeof(SiriusFlags::type) );
 
-                    bool isPeerAReplicator = false;
-                    if ( ! delegate->acceptConnection( m_transactionHash, m_peer_public_key, &isPeerAReplicator ) &&
-                            ! (torrent->m_siriusFlags & sf_is_receiver) )
+                // Check channelId or replicator sharding
+                if ( m_otherPeerSiriusFlags & SiriusFlags::peer_is_replicator ) // replicator connects to replicator or client
+                {
+                    if ( ! delegate->acceptReplicatorConnection( *torrent->m_driveKey.get(), m_other_peer_key ) )
                     {
-                        std::cerr << "info_hash:" << torrent->info_hash().v2 << std::endl;
                         std::cerr << "+++ ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
                                   << " "
                                   << "key "
-                                  << (int) m_peer_public_key[0]
-                                  << "hash "
-                                  << (int) m_transactionHash[0]
+                                  << (int) m_other_peer_key[0]
+                                  << "driveKey "
+                                  << (int) torrent->m_driveKey.get()->at(0)
                                   << " "
                                   << m_remote.address().to_string()
                                   << " "
@@ -3935,21 +3901,43 @@ namespace {
                         disconnect( errors::reserved, operation_t::unknown );
                         return;
                     }
-//                    std::cerr << "+++ accepted!!! by:"
-//                              << delegate->dbgOurPeerName()
-//                              << " from: "
-//                              << m_remote.address().to_string()
-//                              << " "
-//                              << m_remote.port()
-//                              << std::endl;
+                    m_isDownloadUnlimited = false;
+                }
+                else if ( m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
+                {
+                    if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator ) // client connects to replicator
+                    {
+                        if ( ! delegate->acceptClientConnection( m_other_peer_hash, m_other_peer_key ) )
+                        {
+                            std::cerr << "info_hash:" << torrent->info_hash().v2 << std::endl;
+                            std::cerr << "+++ ERROR? connection is not accepted '"
+                                      << delegate->dbgOurPeerName()
+                                      << " "
+                                      << "key "
+                                      << (int) m_other_peer_key[0]
+                                      << "hash "
+                                      << (int) m_other_peer_hash[0]
+                                      << " "
+                                      << m_remote.address().to_string()
+                                      << " "
+                                      << m_remote.port()
+                                      << std::endl;
 
-                    m_isDownloadUnlimited = !delegate->isClient() && isPeerAReplicator;
+                            //todo? - errors::error_code_max, operation_t::unknown
+                            disconnect( errors::reserved, operation_t::unknown );
+                            return;
+                        }
+                        m_isDownloadUnlimited = false;
+                    }
+                    else // client connects to clent
+                    {
+                        // now it is not supported
+                        disconnect( errors::reserved, operation_t::unknown );
+                        return;
+                    }
                 }
             }
 
-            // Save already downloaded size (Not used?)
-            uint64_t downloadedSize;
-            std::copy(recv_buffer.begin() + 32+32, recv_buffer.begin() + 32+32+8, &downloadedSize);
 
             // Get peer id (it is a random sequence)
             peer_id pid;
@@ -4229,8 +4217,10 @@ namespace {
 		    {
                 std::shared_ptr<torrent> torrent = associated_torrent().lock();
                 std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                if ( delegate )
-                    delegate->onPieceSent( m_transactionHash, m_peer_public_key, amount_payload );
+                if ( delegate && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
+                {
+                    delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, amount_payload );
+                }
 		    }
 #endif
 			std::shared_ptr<torrent> t = associated_torrent().lock();

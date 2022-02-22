@@ -56,6 +56,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/noexcept_movable.hpp"
 #include "libtorrent/fwd.hpp"
 
+#ifdef SIRIUS_DRIVE_MULTI
+#include "sirius_drive/session_delegate.h"
+#endif
+
 namespace libtorrent {
 
 TORRENT_VERSION_NAMESPACE_3
@@ -390,9 +394,17 @@ TORRENT_VERSION_NAMESPACE_3
 
 #ifdef SIRIUS_DRIVE_MULTI
     public:
-        uint32_t                                m_siriusFlags = 0;
-        std::optional<std::array<uint8_t,32>>   m_transactionHash;
-        uint64_t                                m_downloadLimit; // for modify drive - all data size
+        lt::SiriusFlags::type                   m_siriusFlags = SiriusFlags::none;
+
+        // DriveKey be set only in by replicators
+        std::optional<std::array<uint8_t,32>>   m_driveKey;
+
+        // ChannelId will be set by client
+        std::optional<std::array<uint8_t,32>>   m_channelId;
+
+        // ModifyTx could be set by client and replicator
+        std::optional<std::array<uint8_t,32>>   m_modifyTx;
+
 #endif
 	};
 
