@@ -2602,7 +2602,9 @@ bool is_downloading_state(int const st)
 			// managed logic runs again (which is triggered further down)
 			// setting flags to 0 prevents the disk cache from being evicted as a
 			// result of this
-			set_paused(true, {});
+
+            //TODO: Temporary dirty fix
+			//set_paused(true, {});
 		}
 
 		// we're done checking! (this should cause a call to trigger_auto_manage)
