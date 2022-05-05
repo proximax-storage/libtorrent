@@ -43,7 +43,7 @@ class session_delegate {
                                                  const std::array<uint8_t,32>&  peerPublicKey )
         {
             //(???)
-            // now client already accpents connection from any replicator ?
+            // now client already accepts connection from any replicator ?
             return false;
         }
 
@@ -188,6 +188,9 @@ class session_delegate {
         // They will be called when 'client' requests a piece from 'replicator' (handshake)
         virtual uint64_t receivedSize( const std::array<uint8_t,32>&  peerPublicKey ) = 0;
         virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
+    
+        virtual void handleDhtResponse( lt::bdecode_node response ) = 0;
+
 
         virtual bool     isStopped()
         {
