@@ -589,7 +589,9 @@ namespace libtorrent {
 			ec.operation = operation_t::file_read;
 
 			// we either get an error or 0 or more bytes read
+#ifndef SIRIUS_DRIVE_MULTI //(???)**
 			TORRENT_ASSERT(e || ret > 0);
+#endif
 			TORRENT_ASSERT(ret <= bufs_size(vec));
 
 			if (e)
