@@ -354,6 +354,7 @@ TORRENT_EXPORT void assert_fail(char const* expr, int line
 				"This indicates a bug in the client application using libtorrent\n";
 	}
 
+#ifdef TORRENT_PRODUCTION_ASSERTS
 	assert_print("%s\n"
 #ifdef TORRENT_PRODUCTION_ASSERTS
 		"#: %d\n"
@@ -372,6 +373,7 @@ TORRENT_EXPORT void assert_fail(char const* expr, int line
 		, file, line, function, expr
 		, value ? value : "", value ? "\n" : ""
 		, stack);
+#endif // #ifndef TORRENT_PRODUCTION_ASSERTS
 
 	// if production asserts are defined, don't abort, just print the error
 #ifndef TORRENT_PRODUCTION_ASSERTS
