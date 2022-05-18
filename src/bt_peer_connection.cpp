@@ -1132,15 +1132,29 @@ namespace {
 
             if ( m_otherPeerSiriusFlags & SiriusFlags::peer_is_replicator )
             {
-                delegate->onPieceRequestReceivedFromReplicator( m_other_peer_hash,  // modifyTx
-                                                                m_other_peer_key,   // replicator key
-                                                                r.length );
+                if ( ! delegate->onPieceRequestReceivedFromReplicator( m_other_peer_hash,  // modifyTx
+                                                                       m_other_peer_key,   // replicator key
+                                                                       r.length ) )
+                {
+                    if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
+                    {
+                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                    }
+                    return;
+                }
             }
             else
             {
-                delegate->onPieceRequestReceivedFromClient( m_other_peer_hash,      // channelId
-                                                            m_other_peer_key,       // replicator key
-                                                            r.length );
+                if ( ! delegate->onPieceRequestReceivedFromClient( m_other_peer_hash,      // channelId
+                                                                   m_other_peer_key,       // replicator key
+                                                                   r.length ) )
+                {
+                    if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
+                    {
+                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                    }
+                    return;
+                }
             
                 // We do not disconnect peer if Signature is invalid
                 // we only ignore this request
@@ -2530,7 +2544,7 @@ namespace {
 
             if ( hash )
             {
-                delegate->onPieceRequest( *hash, m_other_peer_key, r.length );
+                delegate->onPieceRequestWrite( *hash, m_other_peer_key, r.length );
 
                 delegate->signReceipt( *hash,
                                        m_other_peer_key, // replicator public key

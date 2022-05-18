@@ -92,18 +92,18 @@ class session_delegate {
         // It will be called by client (or replicator-receiver),
         // when a piece is requested by receiver
         // (to accumulate requested data size; now it is not used)
-        virtual void onPieceRequest( const std::array<uint8_t,32>&  transactionHash,
-                                       const std::array<uint8_t,32>&  senderPublicKey,
-                                       uint64_t                       pieceSize ) = 0;
+        virtual void onPieceRequestWrite( const std::array<uint8_t,32>&  transactionHash,
+                                          const std::array<uint8_t,32>&  senderPublicKey,
+                                          uint64_t                       pieceSize ) = 0;
 
         // It will be called by sender,
         // when a piece request received
         // (to accumulate requesting data size)
-        virtual void onPieceRequestReceivedFromReplicator( const std::array<uint8_t,32>&  modifyTx,
+        virtual bool onPieceRequestReceivedFromReplicator( const std::array<uint8_t,32>&  modifyTx,
                                                            const std::array<uint8_t,32>&  receiverPublicKey,
                                                            uint64_t                       pieceSize ) = 0;
     
-        virtual void onPieceRequestReceivedFromClient( const std::array<uint8_t,32>&      transactionHash,
+        virtual bool onPieceRequestReceivedFromClient( const std::array<uint8_t,32>&      transactionHash,
                                                        const std::array<uint8_t,32>&      receiverPublicKey,
                                                        uint64_t                           pieceSize ) = 0;
 
