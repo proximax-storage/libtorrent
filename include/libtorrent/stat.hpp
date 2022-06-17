@@ -106,10 +106,17 @@ namespace libtorrent {
 		std::int32_t m_5_sec_average;
 	};
 
+	#if __MINGW32__
+	class TORRENT_EXTRA_EXPORT __stat64
+	{
+	public:
+		void operator+=(const __stat64& s)
+	#else
 	class TORRENT_EXTRA_EXPORT stat
 	{
 	public:
 		void operator+=(const stat& s)
+	#endif
 		{
 			for (int i = 0; i < num_channels; ++i)
 				m_stat[i] += s.m_stat[i];

@@ -97,7 +97,11 @@ struct mock_peer_connection
 	bool was_disconnected() const { return m_disconnect_called; }
 	void set_local_ep(tcp::endpoint const& ep) { m_local = ep; }
 
+	#if __MINGW32__
+	lt::__stat64 m_stat;
+	#else
 	lt::stat m_stat;
+	#endif
 	bool m_choked;
 	bool m_outgoing;
 	torrent_peer* m_tp;
@@ -124,7 +128,11 @@ struct mock_peer_connection
 	bool fast_reconnect() const override { return true; }
 	bool is_choked() const override { return m_choked; }
 	bool failed() const override { return false; }
+	#if __MINGW32__
+	lt::__stat64 const& statistics() const override { return m_stat; }
+	#else
 	lt::stat const& statistics() const override { return m_stat; }
+	#endif
 };
 
 struct mock_torrent

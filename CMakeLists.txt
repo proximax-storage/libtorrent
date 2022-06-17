@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.16.0 FATAL_ERROR) # Configurable policies: <= C
 
 cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0092 NEW)
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW) 
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -525,6 +528,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES GNU)
 		-Wno-format-zero-length
 		-Wno-noexcept-type
 		-ftemplate-depth=512
+		-O2
 	)
 elseif(MSVC)
 	add_compile_options(
@@ -969,12 +973,14 @@ install(
 )
 
 if (MSVC)
+	add_library(torrent-rasterbar ${CMAKE_CURRENT_SOURCE_DIR})
 	set_target_properties(torrent-rasterbar
 	PROPERTIES
 		PDB_NAME torrent-rasterbar
 		PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 		COMPILE_PDB_NAME torrent-rasterbar
 		COMPILE_PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+		LINKER_LANGUAGE C++
 	)
 
 	if (static_runtime)

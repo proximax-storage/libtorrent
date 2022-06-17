@@ -520,7 +520,11 @@ namespace libtorrent {
 
 		std::string name() const;
 
+		#if __MINGW32__
+		__stat64 statistics() const { return m_stat; }
+		#else
 		stat statistics() const { return m_stat; }
+		#endif
 		boost::optional<std::int64_t> bytes_left() const;
 
 		void bytes_done(torrent_status& st, status_flags_t) const;
@@ -1353,7 +1357,11 @@ namespace libtorrent {
 
 		// this is the upload and download statistics for the whole torrent.
 		// it's updated from all its peers once every second.
+		#if __MINGW32__
+		libtorrent::__stat64 m_stat;
+		#else
 		libtorrent::stat m_stat;
+		#endif
 
 		// -----------------------------
 

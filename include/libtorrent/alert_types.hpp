@@ -1810,8 +1810,13 @@ TORRENT_VERSION_NAMESPACE_3
 	struct TORRENT_DEPRECATED_EXPORT stats_alert final : torrent_alert
 	{
 		// internal
+		#if __MINGW32__
+		TORRENT_UNEXPORT stats_alert(aux::stack_allocator& alloc, torrent_handle const& h, int interval
+			, __stat64 const& s);
+		#else
 		TORRENT_UNEXPORT stats_alert(aux::stack_allocator& alloc, torrent_handle const& h, int interval
 			, stat const& s);
+		#endif
 
 		TORRENT_DEFINE_ALERT(stats_alert, 57)
 
