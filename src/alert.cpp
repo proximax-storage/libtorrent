@@ -1479,12 +1479,21 @@ namespace {
 		{
 			std::array<int, stats_alert::num_channels> arr;
 
+			#if __MINGW32__
+			arr[stats_alert::upload_payload] = s[__stat64::upload_payload].counter();
+			arr[stats_alert::upload_protocol] = s[__stat64::upload_protocol].counter();
+			arr[stats_alert::download_payload] = s[__stat64::download_payload].counter();
+			arr[stats_alert::download_protocol] = s[__stat64::download_protocol].counter();
+			arr[stats_alert::upload_ip_protocol] = s[__stat64::upload_ip_protocol].counter();
+			arr[stats_alert::download_ip_protocol] = s[__stat64::download_ip_protocol].counter();
+			#else
 			arr[stats_alert::upload_payload] = s[stat::upload_payload].counter();
 			arr[stats_alert::upload_protocol] = s[stat::upload_protocol].counter();
 			arr[stats_alert::download_payload] = s[stat::download_payload].counter();
 			arr[stats_alert::download_protocol] = s[stat::download_protocol].counter();
 			arr[stats_alert::upload_ip_protocol] = s[stat::upload_ip_protocol].counter();
 			arr[stats_alert::download_ip_protocol] = s[stat::download_ip_protocol].counter();
+			#endif
 
 #if TORRENT_ABI_VERSION == 1
 			arr[stats_alert::upload_dht_protocol] = 0;
