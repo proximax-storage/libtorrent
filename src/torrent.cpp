@@ -2604,7 +2604,9 @@ bool is_downloading_state(int const st)
 			// result of this
 
             //TODO: Temporary dirty fix
+#ifndef SIRIUS_DRIVE
 			//set_paused(true, {});
+#endif
 		}
 
 		// we're done checking! (this should cause a call to trigger_auto_manage)
@@ -6131,7 +6133,9 @@ namespace {
 			TORRENT_ASSERT(is_paused());
 
 			// this will post torrent_paused alert
+#ifndef SIRIUS_DRIVE
 			set_paused(true);
+#endif
 		}
 
 		update_want_peers();
@@ -9330,7 +9334,9 @@ namespace {
 			set_need_save_resume();
 		}
 
+#ifndef SIRIUS_DRIVE
 		set_paused(true, flags | torrent_handle::clear_disk_cache);
+#endif
 	}
 
 	void torrent::do_pause(pause_flags_t const flags, bool const was_paused)

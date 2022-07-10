@@ -3902,11 +3902,13 @@ namespace {
 				t->log_to_all_peers("auto manager pausing torrent");
 #endif
 			// use graceful pause for auto-managed torrents
+#ifndef SIRIUS_DRIVE
 			t->set_paused(true, torrent_handle::graceful_pause
 				| torrent_handle::clear_disk_cache);
 			t->set_announce_to_dht(false);
 			t->set_announce_to_trackers(false);
 			t->set_announce_to_lsd(false);
+#endif
 		}
 	}
 
