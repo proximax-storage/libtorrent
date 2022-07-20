@@ -386,6 +386,34 @@ namespace {
 
 	create_torrent::~create_torrent() = default;
 
+#ifdef SIRIUS_DRIVE_MULTI
+    int create_torrent::automatic_piece_size(int64_t total_size) {
+        // size_table is computed from the following:
+        //   target_list_size = sqrt(total_size) * 2;
+        //   target_piece_size = total_size / (target_list_size / hash_size);
+        // Given hash_size = 20 bytes, target_piece_size = (16*1024 * pow(2, i))
+        // we can determine size_table = (total_size = pow(2 * target_piece_size / hash_size, 2))
+        std::array<std::int64_t, 10> const size_table{{
+            2684355LL // ->  16kiB
+            , 10737418LL // ->  32 kiB
+            , 42949673LL // ->  64 kiB
+            , 171798692LL // -> 128 kiB
+            , 687194767LL // -> 256 kiB
+            , 2748779069LL // -> 512 kiB
+            , 10995116278LL // -> 1 MiB
+            , 43980465111LL // -> 2 MiB
+            , 175921860444LL // -> 4 MiB
+            , 703687441777LL}}; // -> 8 MiB
+
+            int i = 0;
+            for ( auto const s : size_table ) {
+                if ( s >= total_size) break;
+                ++i;
+            }
+            return default_block_size << i;
+    }
+#endif
+
 	create_torrent::create_torrent(file_storage& fs, int piece_size
 		, create_flags_t const flags)
 		: m_files(fs)
@@ -406,6 +434,9 @@ namespace {
 		// a piece_size of 0 means automatic
 		if (piece_size == 0)
 		{
+#ifdef SIRIUS_DRIVE_MULTI
+		    piece_size = automatic_piece_size(fs.total_size());
+#else
 			// size_table is computed from the following:
 			//   target_list_size = sqrt(total_size) * 2;
 			//   target_piece_size = total_size / (target_list_size / hash_size);
@@ -430,6 +461,7 @@ namespace {
 				++i;
 			}
 			piece_size = default_block_size << i;
+#endif
 		}
 
 		if (!(flags & v1_only))
