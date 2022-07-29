@@ -2602,9 +2602,10 @@ bool is_downloading_state(int const st)
 			// managed logic runs again (which is triggered further down)
 			// setting flags to 0 prevents the disk cache from being evicted as a
 			// result of this
-
+#ifndef SIRIUS_DRIVE_MULTI
             //TODO: Temporary dirty fix
-			//set_paused(true, {});
+			set_paused(true, {});
+#endif
 		}
 
 		// we're done checking! (this should cause a call to trigger_auto_manage)
@@ -4260,6 +4261,12 @@ namespace {
 	{
 //		INVARIANT_CHECK;
 		TORRENT_ASSERT(is_single_thread());
+
+#ifdef SIRIUS_DRIVE_MULTI
+		if (m_picker->has_piece_passed(index)) {
+		    return;
+		}
+#endif
 		TORRENT_ASSERT(!m_picker->has_piece_passed(index));
 
 #ifndef TORRENT_DISABLE_LOGGING
