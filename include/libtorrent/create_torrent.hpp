@@ -177,6 +177,10 @@ namespace libtorrent {
 		// them with piece boundaries.
 		static constexpr create_flags_t canonical_files = 7_bit;
 
+#ifdef SIRIUS_DRIVE_MULTI
+		static int automatic_piece_size(int64_t total_size);
+#endif
+
 		// The ``piece_size`` is the size of each piece in bytes. It must be a
 		// power of 2 and a minimum of 16 kiB. If a piece size of 0 is
 		// specified, a piece_size will be set automatically.

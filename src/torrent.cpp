@@ -2605,7 +2605,7 @@ bool is_downloading_state(int const st)
 
             //TODO: Temporary dirty fix
 #ifndef SIRIUS_DRIVE
-			//set_paused(true, {});
+			set_paused(true, {});
 #endif
 		}
 
@@ -4262,6 +4262,12 @@ namespace {
 	{
 //		INVARIANT_CHECK;
 		TORRENT_ASSERT(is_single_thread());
+
+#ifdef SIRIUS_DRIVE_MULTI
+		if (m_picker->has_piece_passed(index)) {
+		    return;
+		}
+#endif
 		TORRENT_ASSERT(!m_picker->has_piece_passed(index));
 
 #ifndef TORRENT_DISABLE_LOGGING

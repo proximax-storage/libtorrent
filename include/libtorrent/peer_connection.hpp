@@ -1040,7 +1040,11 @@ namespace aux {
 		// this peer
 		// TODO: factor this out into its own class with a virtual interface
 		// torrent and session should implement this interface
+		#if __MINGW32__
+		__stat64 m_statistics;
+		#else
 		stat m_statistics;
+		#endif
 
 		// the number of outstanding bytes expected
 		// to be received by extensions
