@@ -2548,14 +2548,16 @@ namespace {
 
                 delegate->signReceipt( *hash,
                                        m_other_peer_key, // replicator public key
-                                       delegate->requestedSize( m_other_peer_key ),
+                                       delegate->requestedSize( *hash, m_other_peer_key ),
                                        signature );
             }
             else
             {
                 std::cerr << "Internal ERROR!!!" << std::endl;
             }
-            
+
+            assert(hash);
+
             auto local_endpoint = this->local_endpoint();
             this->remote();
 
@@ -2567,7 +2569,7 @@ namespace {
             memcpy(ptr,signature.data(),signature.size());
             ptr += signature.size();
 
-            aux::write_uint64(delegate->requestedSize( m_other_peer_key ), ptr);
+            aux::write_uint64(delegate->requestedSize( *hash, m_other_peer_key ), ptr);
 
             aux::write_int32(static_cast<int>(r.piece), ptr);
             aux::write_int32(r.start, ptr);

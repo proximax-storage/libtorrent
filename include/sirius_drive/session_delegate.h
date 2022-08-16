@@ -185,9 +185,11 @@ class session_delegate {
         // 'downloadedSize' should be set to proper value (last 'downloadedSize' of peviuos peer_connection)
         //virtual void setStartReceivedSize( uint64_t downloadedSize ) = 0;
 
-        // They will be called when 'client' requests a piece from 'replicator' (handshake)
-        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  peerPublicKey ) = 0;
-        virtual uint64_t requestedSize( const std::array<uint8_t,32>&  peerPublicKey )  = 0;
+        // They will be called when 'client' requests a piece fromonPieceReceived 'replicator' (handshake)
+        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  transactionHash,
+                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
+        virtual uint64_t requestedSize( const std::array<uint8_t,32>&  transactionHash,
+                                        const std::array<uint8_t,32>&  peerPublicKey )  = 0;
     
         virtual void     handleDhtResponse( lt::bdecode_node response, boost::asio::ip::udp::endpoint endpoint ) = 0;
 
