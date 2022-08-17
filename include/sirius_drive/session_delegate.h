@@ -23,6 +23,10 @@ namespace SiriusFlags {
     };
 };
 
+enum class connection_status {
+    REJECTED, LIMITED, UNLIMITED
+};
+
 class session_delegate {
     public:
         virtual ~session_delegate() = default;
@@ -32,19 +36,21 @@ class session_delegate {
     
         virtual void onTorrentDeleted( lt::torrent_handle ) = 0;
     
-        virtual bool acceptClientConnection( const std::array<uint8_t,32>&  channelId,
-                                             const std::array<uint8_t,32>&  peerPublicKey )
+        virtual connection_status acceptClientConnection( const std::array<uint8_t,32>&  channelId,
+                                                          const std::array<uint8_t,32>&  peerKey,
+                                                          const std::array<uint8_t,32>&  driveKey,
+                                                          const std::array<uint8_t,32>&  fileHash )
         {
             // now client ignore connection from other client
-            return false;
+            return connection_status::REJECTED;
         }
 
-        virtual bool acceptReplicatorConnection( const std::array<uint8_t,32>&  driveKey,
+        virtual connection_status acceptReplicatorConnection( const std::array<uint8_t,32>&  driveKey,
                                                  const std::array<uint8_t,32>&  peerPublicKey )
         {
             //(???)
             // now client already accepts connection from any replicator ?
-            return false;
+            return connection_status::REJECTED;
         }
 
         virtual void onDisconnected( const std::array<uint8_t,32>&  transactionHash,
@@ -63,7 +69,7 @@ class session_delegate {
 
         // It will be called on 'giving' side,
         // when 'downloader' requests piece
-        virtual bool checkDownloadLimit( const std::array<uint8_t,64>&  signature,
+        virtual bool checkDownloadLimit( const std::array<uint8_t,32>&  peerKey,
                                          const std::array<uint8_t,32>&  downloadChannelId,
                                          uint64_t                       downloadedSize )
         {

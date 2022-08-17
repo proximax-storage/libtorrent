@@ -1155,41 +1155,43 @@ namespace {
                     }
                     return;
                 }
-            
-                // We do not disconnect peer if Signature is invalid
-                // we only ignore this request
-                // Because 'acceptReceipt' returns false in case of old receipt also
-                delegate->acceptReceipt( m_other_peer_hash,       // download channel id
-                                         m_other_peer_key,        // receiver public key
-                                         delegate->publicKey(),   // sender public key
-                                         downloadedSize, signature );
 
-                // check receipt limit
-                if ( ! delegate->checkDownloadLimit( signature, m_other_peer_hash, downloadedSize ) )
+                if ( !m_isDownloadUnlimited )
                 {
-                    // ignore request
-                    std::cerr << "+++ checkDownloadLimit failed: outgoing:" << is_outgoing()
-                    << " peer connection NOT established: " << delegate->dbgOurPeerName()
-                    << " from: "  << (int)m_other_peer_key[0]
-                    << " hash: "  << (int)m_other_peer_hash[0]
-                    << " flags: " << torrent->m_siriusFlags
-                    << std::endl << std::flush;
+                    // We do not disconnect peer if Signature is invalid
+                    // we only ignore this request
+                    // Because 'acceptReceipt' returns false in case of old receipt also
+                    delegate->acceptReceipt( m_other_peer_hash,       // download channel id
+                                             m_other_peer_key,        // receiver public key
+                                             delegate->publicKey(),   // sender public key
+                                             downloadedSize, signature );
 
-                    std::cout << std::endl;
-                    disconnect( errors::reserved, operation_t::unknown, peer_error );
-                    return;
+                    // check receipt limit
+                    if ( ! delegate->checkDownloadLimit( m_other_peer_key, m_other_peer_hash, downloadedSize ) )
+                    {
+                        // ignore request
+                        std::cerr << "+++ checkDownloadLimit failed: outgoing:" << is_outgoing()
+                        << " peer connection NOT established: " << delegate->dbgOurPeerName()
+                        << " from: "  << (int)m_other_peer_key[0]
+                        << " hash: "  << (int)m_other_peer_hash[0]
+                        << " flags: " << torrent->m_siriusFlags
+                        << std::endl << std::flush;
+
+                        std::cout << std::endl;
+                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                        return;
+                    }
+
+                    delegate->sendReceiptToOtherReplicators( m_other_peer_hash,
+                                                             m_other_peer_key,      // receiver public key
+                                                             downloadedSize,
+                                                             signature );
+                    //                std::cerr << "+++ rd-request-piece: ACCEPTED outgoing: " << is_outgoing() << " " << delegate->dbgOurPeerName()
+                    //                << " from: "  << (int)m_other_peer_key[0]
+                    //                << " hash: "  << (int)m_other_peer_hash[0]
+                    //                << " flags: " << torrent->m_siriusFlags
+                    //                << std::endl << std::flush;
                 }
-
-                delegate->sendReceiptToOtherReplicators( m_other_peer_hash,
-                                                         m_other_peer_key,      // receiver public key
-                                                         downloadedSize,
-                                                         signature );
-//                std::cerr << "+++ rd-request-piece: ACCEPTED outgoing: " << is_outgoing() << " " << delegate->dbgOurPeerName()
-//                << " from: "  << (int)m_other_peer_key[0]
-//                << " hash: "  << (int)m_other_peer_hash[0]
-//                << " flags: " << torrent->m_siriusFlags
-//                << std::endl << std::flush;
-
             }
         }
 #else
@@ -3898,7 +3900,8 @@ namespace {
                 // Check channelId or replicator sharding
                 if ( m_otherPeerSiriusFlags & SiriusFlags::peer_is_replicator ) // replicator connects to replicator or client
                 {
-                    if ( ! delegate->acceptReplicatorConnection( *torrent->m_driveKey.get(), m_other_peer_key ) )
+                    auto connection_status = delegate->acceptReplicatorConnection( *torrent->m_driveKey.get(), m_other_peer_key );
+                    if ( connection_status == connection_status::REJECTED )
                     {
                         std::cerr << "+++ ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
@@ -3917,13 +3920,24 @@ namespace {
                         disconnect( errors::reserved, operation_t::unknown );
                         return;
                     }
-                    m_isDownloadUnlimited = false;
+                    TORRENT_ASSERT( connection_status == connection_status::UNLIMITED );
+                    m_isDownloadUnlimited = true;
                 }
                 else if ( m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
                 {
                     if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator ) // client connects to replicator
                     {
-                        if ( ! delegate->acceptClientConnection( m_other_peer_hash, m_other_peer_key ) )
+                        std::array<uint8_t, 32> fileHash{};
+                        auto hash = torrent->info_hash().v2;
+                        if ( hash.size() == 32 ) {
+                            memcpy( &fileHash[0], &hash[0], 32 );
+                        }
+                        auto connection_status = delegate->acceptClientConnection(
+                                m_other_peer_hash,
+                                m_other_peer_key,
+                                *torrent->m_driveKey,
+                                fileHash);
+                        if ( connection_status == connection_status::REJECTED )
                         {
                             std::cerr << "info_hash:" << torrent->info_hash().v2 << std::endl;
                             std::cerr << "+++ ERROR? connection is not accepted '"
@@ -3943,7 +3957,9 @@ namespace {
                             disconnect( errors::reserved, operation_t::unknown );
                             return;
                         }
-                        m_isDownloadUnlimited = false;
+                        if ( connection_status == connection_status::UNLIMITED ) {
+                            m_isDownloadUnlimited = true;
+                        }
                     }
                     else // client connects to clent
                     {
