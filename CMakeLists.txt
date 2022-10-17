@@ -669,14 +669,11 @@ if (ANDROID)
 endif()
 
 if (APPLE)
-    set(CMAKE_CXX_FLAGS "-std=c++20 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk ${CMAKE_CXX_FLAGS}")
-
-    set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT_DIR} /usr/local/Cellar/openssl@1.1/1.1.1i/)
-    set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libcrypto.dylib CACHE FILEPATH "" FORCE)
-    set(OPENSSL_SSL_LIBRARY ${OPENSSL_ROOT_DIR}/lib/libssl.dylib CACHE FILEPATH "" FORCE)
-
-    link_directories(/usr/local/opt/icu4c/lib/)
-    link_directories(/usr/local/opt/openssl@1.1/lib)
+    set(CMAKE_VERBOSE_MAKEFILE ON)
+	set(BOOST_INCLUDE_DIR "/usr/local/include")
+	set(BOOST_LIB_DIR "/usr/local/lib")
+	set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+	set(OPENSSL_LIBRARIES "/usr/local/opt/openssl/lib")
 
     # for ip_notifier
     target_link_libraries(torrent-sirius PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
