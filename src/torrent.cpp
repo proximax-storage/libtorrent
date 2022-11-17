@@ -2800,14 +2800,14 @@ bool is_downloading_state(int const st)
 #ifndef TORRENT_DISABLE_LOGGING
 		if (should_log() && !peers.empty())
 		{
-			std::string str;
+			std::ostringstream str;
 			for (auto const& peer : peers)
 			{
-				str += peer.address().to_string();
-				str += ' ';
+				str << peer.address().to_string() << ":" << peer.port();
+				str << ' ';
 			}
 			debug_log("DHT add_peer() [ %s] connect-candidates: %d"
-				, str.c_str(), m_peer_list
+				, str.str().c_str(), m_peer_list
 				? m_peer_list->num_connect_candidates() : -1);
 		}
 #endif
