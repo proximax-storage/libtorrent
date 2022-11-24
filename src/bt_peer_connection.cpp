@@ -2314,7 +2314,11 @@ namespace {
             }
             else
             {
-                delegate->onEndpointDiscovered(m_other_peer_key, m_remote);
+                auto port = root.dict_find_int_value("port");
+
+                if (port > 0) {
+                    delegate->onEndpointDiscovered(m_other_peer_key, std::make_optional<boost::asio::ip::tcp::endpoint>(m_remote.address(), port));
+                }
 //                std::cerr << "+++ rd-EXT-handshake-and-verify-it ACCEPTED: " << is_outgoing()
 //                << " peer connection established: " << delegate->dbgOurPeerName()
 //                << " from: "  << (int)m_other_peer_key[0]
@@ -2842,6 +2846,16 @@ namespace {
 //            {
 //                disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
 //            }
+
+            auto const port = m_ses.listen_port(
+                    t->is_ssl_torrent()
+                    ? aux::transport::ssl
+                    : aux::transport::plaintext,
+                    local_endpoint().address());
+            // Note, we do put our own "port" entry instead of using "p"
+            if ( port != 0 ) {
+                handshake["port"] = port;
+            }
 
             handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
         }
