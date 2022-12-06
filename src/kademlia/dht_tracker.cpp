@@ -52,6 +52,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <libtorrent/session_status.hpp>
 #include <libtorrent/aux_/ip_helpers.hpp> // for is_v6
 
+#include <iostream>
+
 #ifndef TORRENT_DISABLE_LOGGING
 #include <libtorrent/hex.hpp> // to_hex
 #endif
@@ -718,6 +720,7 @@ namespace {
 
 		if (ec)
 		{
+			std::cout << "Error During Send Packet to " << print_endpoint(addr) << ": " << ec.message() << std::endl;
 			m_counters.inc_stats_counter(counters::dht_messages_out_dropped);
 #ifndef TORRENT_DISABLE_LOGGING
 			m_log->log_packet(dht_logger::outgoing_message, m_send_buf, addr);
