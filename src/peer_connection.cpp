@@ -5909,52 +5909,52 @@ namespace libtorrent {
 		m_socket_is_writing = true;
 #endif
 
-#ifdef SIRIUS_DRIVE_MULTI
-#pragma mark --payload--
-		// only if we use TCP sockets
-		if ( m_socket.which() == 0 )
-        {
-            auto& s = boost::get<tcp::socket>( m_socket );
-            s.async_write_some( vec, [this]( error_code const& error, std::size_t const bytes_transferred )
-            {
-                std::shared_ptr<torrent> torrent = associated_torrent().lock();
-                if ( torrent != nullptr )
-                {
-                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                    
-                    if ( delegate && !delegate->isClient() && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
-                    {
-                        int payload = m_send_buffer.getSentPayload( bytes_transferred );
-                        if ( payload > 0 )
-                        {
-                            delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, payload );
-                        }
-                    }
-                }
-
-#if TORRENT_USE_ASSERTS
-                try {
-                    if ( !m_destructed )
-                        on_send_data( error, bytes_transferred );
-                }
-                catch ( system_error const& e ) {
-                    on_error( e.code());
-                }
-                catch ( std::exception const& e ) {
-                    on_exception( e );
-                }
-                catch ( ... ) {
-                    // this is pretty bad
-                    TORRENT_ASSERT( false );
-                    std::runtime_error e( "unknown exception" );
-                    on_exception( e );
-                }
-#endif
-            } );
-        }
-		else
-        {
-#endif // #ifdef SIRIUS_DRIVE_MULTI
+//#ifdef SIRIUS_DRIVE_MULTI
+//#pragma mark --payload--
+//		// only if we use TCP sockets
+//		if ( m_socket.which() == 0 )
+//        {
+//            auto& s = boost::get<tcp::socket>( m_socket );
+//            s.async_write_some( vec, [this]( error_code const& error, std::size_t const bytes_transferred )
+//            {
+//                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+//                if ( torrent != nullptr )
+//                {
+//                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+//
+//                    if ( delegate && !delegate->isClient() && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
+//                    {
+//                        int payload = m_send_buffer.getSentPayload( bytes_transferred );
+//                        if ( payload > 0 )
+//                        {
+//                            delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, payload );
+//                        }
+//                    }
+//                }
+//
+//#if TORRENT_USE_ASSERTS
+//                try {
+//                    if ( !m_destructed )
+//                        on_send_data( error, bytes_transferred );
+//                }
+//                catch ( system_error const& e ) {
+//                    on_error( e.code());
+//                }
+//                catch ( std::exception const& e ) {
+//                    on_exception( e );
+//                }
+//                catch ( ... ) {
+//                    // this is pretty bad
+//                    TORRENT_ASSERT( false );
+//                    std::runtime_error e( "unknown exception" );
+//                    on_exception( e );
+//                }
+//#endif
+//            } );
+//        }
+//		else
+//        {
+//#endif // #ifdef SIRIUS_DRIVE_MULTI
             using write_handler_type = aux::handler<
                 peer_connection
                 , decltype(&peer_connection::on_send_data)
@@ -5968,9 +5968,9 @@ namespace libtorrent {
                 , "write handler does not have the expected size");
 
             m_socket.async_write_some(vec, write_handler_type(self()));
-#ifdef SIRIUS_DRIVE_MULTI
-        }
-#endif
+//#ifdef SIRIUS_DRIVE_MULTI
+//        }
+//#endif
 
 		m_channel_state[upload_channel] |= peer_info::bw_network;
 		m_last_sent.set(m_connect, aux::time_now());

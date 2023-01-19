@@ -1156,15 +1156,26 @@ namespace {
                     return;
                 }
 
-                if ( !m_isDownloadUnlimited )
+                if ( ! m_isDownloadUnlimited )
                 {
-                    // We do not disconnect peer if Signature is invalid
-                    // we only ignore this request
-                    // Because 'acceptReceipt' returns false in case of old receipt also
+                    // ?????+
+                    bool shouldBeDisconnected;
                     delegate->acceptReceipt( m_other_peer_hash,       // download channel id
                                              m_other_peer_key,        // receiver public key
                                              delegate->publicKey(),   // sender public key
-                                             downloadedSize, signature );
+                                             downloadedSize, signature, shouldBeDisconnected );
+                    if ( shouldBeDisconnected )
+                    {
+                        std::cerr << "+++ acceptReceipt returned false: break connection:" << is_outgoing()
+                        << " dbgOurPeerName: " << delegate->dbgOurPeerName()
+                        << " from: "  << (int)m_other_peer_key[0]
+                        << " hash: "  << (int)m_other_peer_hash[0]
+                        << " flags: " << torrent->m_siriusFlags
+                        << std::endl << std::flush;
+
+                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                        return;
+                    }
 
                     // check receipt limit
                     if ( ! delegate->checkDownloadLimit( m_other_peer_key, m_other_peer_hash, downloadedSize ) )
@@ -1177,7 +1188,6 @@ namespace {
                         << " flags: " << torrent->m_siriusFlags
                         << std::endl << std::flush;
 
-                        std::cout << std::endl;
                         disconnect( errors::reserved, operation_t::unknown, peer_error );
                         return;
                     }
@@ -1186,11 +1196,6 @@ namespace {
                                                              m_other_peer_key,      // receiver public key
                                                              downloadedSize,
                                                              signature );
-                    //                std::cerr << "+++ rd-request-piece: ACCEPTED outgoing: " << is_outgoing() << " " << delegate->dbgOurPeerName()
-                    //                << " from: "  << (int)m_other_peer_key[0]
-                    //                << " hash: "  << (int)m_other_peer_hash[0]
-                    //                << " flags: " << torrent->m_siriusFlags
-                    //                << std::endl << std::flush;
                 }
             }
         }
@@ -2326,6 +2331,22 @@ namespace {
 //                << " flags: " << torrent->m_siriusFlags
 //                << std::endl << std::flush;
             }
+            
+            if ( torrent && (torrent->m_siriusFlags & SiriusFlags::client_is_receiver) )
+            {
+                string_view lastReceipt = root.dict_find_string_value("last_receipt");
+                if ( lastReceipt.empty() )
+                {
+                    //std::cerr << "*rcpt*** last_receipt empty: " << delegate->dbgOurPeerName() << std::endl << std::flush;
+                }
+                else
+                {
+                    const auto begin = reinterpret_cast<const uint8_t*>(&lastReceipt[0]);
+                    const auto end = reinterpret_cast<const uint8_t*>(&lastReceipt[lastReceipt.size()]);
+                    //std::cerr << "*rcpt*** last_receipt found" << delegate->dbgOurPeerName() << std::endl << std::flush;
+                    delegate->onLastMyReceipt( {begin,end} );
+                }
+            }
         }
 #endif
 
@@ -2548,21 +2569,19 @@ namespace {
                 hash = torrent->m_modifyTx.get();
             }
 
-            if ( hash )
-            {
-                delegate->onPieceRequestWrite( *hash, m_other_peer_key, r.length );
-
-                delegate->signReceipt( *hash,
-                                       m_other_peer_key, // replicator public key
-                                       delegate->requestedSize( *hash, m_other_peer_key ),
-                                       signature );
-            }
-            else
-            {
-                std::cerr << "Internal ERROR!!!" << std::endl;
-            }
-
             assert(hash);
+
+            delegate->onPieceRequestWrite( *hash, m_other_peer_key, r.length );
+            uint64_t requestedSize = delegate->requestedSize( *hash, m_other_peer_key );
+//            if ( torrent->m_siriusFlags & SiriusFlags::client_is_receiver )
+//            {
+//                std::cerr << "*rcpt*+++: " << delegate->dbgOurPeerName() << " " << m_other_peer_key[0] << ": requestedSize=" << requestedSize << " m_total=" << m_total << std::endl;
+//            }
+
+            delegate->signReceipt( *hash,
+                                   m_other_peer_key, // replicator public key
+                                   requestedSize,
+                                   signature );
 
             auto local_endpoint = this->local_endpoint();
             this->remote();
@@ -2575,7 +2594,7 @@ namespace {
             memcpy(ptr,signature.data(),signature.size());
             ptr += signature.size();
 
-            aux::write_uint64(delegate->requestedSize( *hash, m_other_peer_key ), ptr);
+            aux::write_uint64(requestedSize, ptr);
 
             aux::write_int32(static_cast<int>(r.piece), ptr);
             aux::write_int32(r.start, ptr);
@@ -2858,6 +2877,23 @@ namespace {
             }
 
             handshake["sign"] = std::string( std::begin(signature), std::end(signature) );
+            
+            //std::cerr << "*rcpt*** add receipt: ? other: " << m_otherPeerSiriusFlags << " my: " << (int)torrent->m_siriusFlags << std::endl << std::flush;
+            if ( (torrent->m_siriusFlags & SiriusFlags::peer_is_replicator) &&
+                 (m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver) )
+            {
+                const std::vector<uint8_t>* receipt = delegate->getLastClientReceipt( m_other_peer_hash,       // download channel id
+                                                                                      m_other_peer_key );
+                if ( receipt != nullptr )
+                {
+                    handshake["last_receipt"] = std::string( std::begin(*receipt), std::end(*receipt) );
+                }
+//                else
+//                {
+//                    std::cerr << "*rcpt*** receipt nullptr (hash): " << delegate->dbgOurPeerName() << " " << toString(m_other_peer_hash) <<std::endl << std::flush;
+//                    std::cerr << "*rcpt*** receipt nullptr  (key): " << delegate->dbgOurPeerName() << " " << toString(m_other_peer_key) <<std::endl << std::flush;
+//                }
+            }
         }
 
 #endif
