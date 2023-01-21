@@ -1192,10 +1192,10 @@ namespace {
                         return;
                     }
 
-                    delegate->sendReceiptToOtherReplicators( m_other_peer_hash,
-                                                             m_other_peer_key,      // receiver public key
-                                                             downloadedSize,
-                                                             signature );
+//                    delegate->sendReceiptToOtherReplicators( m_other_peer_hash,
+//                                                             m_other_peer_key,      // receiver public key
+//                                                             downloadedSize,
+//                                                             signature );
                 }
             }
         }
