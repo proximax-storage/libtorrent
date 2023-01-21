@@ -2341,10 +2341,7 @@ namespace {
                 }
                 else
                 {
-                    const auto begin = reinterpret_cast<const uint8_t*>(&lastReceipt[0]);
-                    const auto end = reinterpret_cast<const uint8_t*>(&lastReceipt[lastReceipt.size()]);
-                    //std::cerr << "*rcpt*** last_receipt found" << delegate->dbgOurPeerName() << std::endl << std::flush;
-                    delegate->onLastMyReceipt( {begin,end} );
+                    delegate->onLastMyReceipt( {lastReceipt.begin(),lastReceipt.end()}, torrent->m_channelId );
                 }
             }
         }

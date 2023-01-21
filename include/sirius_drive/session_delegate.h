@@ -187,7 +187,7 @@ class session_delegate {
             return nullptr;
         }
 
-        virtual void onLastMyReceipt( const std::vector<uint8_t> )
+        virtual void onLastMyReceipt( const std::vector<uint8_t>, const std::unique_ptr<std::array<uint8_t,32>>& channelId )
         {
             // will be implemented by Client
         }
