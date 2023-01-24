@@ -1146,7 +1146,7 @@ namespace {
             else
             {
                 if ( ! delegate->onPieceRequestReceivedFromClient( m_other_peer_hash,      // channelId
-                                                                   m_other_peer_key,       // replicator key
+                                                                   m_other_peer_key,       // client key
                                                                    r.length ) )
                 {
                     if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
@@ -1162,7 +1162,6 @@ namespace {
                     bool shouldBeDisconnected;
                     delegate->acceptReceipt( m_other_peer_hash,       // download channel id
                                              m_other_peer_key,        // receiver public key
-                                             delegate->publicKey(),   // sender public key
                                              downloadedSize, signature, shouldBeDisconnected );
                     if ( shouldBeDisconnected )
                     {
