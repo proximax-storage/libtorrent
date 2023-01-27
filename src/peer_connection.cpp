@@ -871,7 +871,35 @@ namespace libtorrent {
 #if TORRENT_USE_ASSERTS
 		m_in_use = 0;
 #endif
+        
+#ifdef SIRIUS_DRIVE_MULTI
+        close_reason_t const close_reason = get_close_reason(m_socket);
+        switch( close_reason )
+        {
+            case close_reason_t::sirius_cr_bad_signature:
+            case close_reason_t::sirius_cr_no_channel:
+            case close_reason_t::sirius_cr_no_client_in_channel:
+            case close_reason_t::sirius_cr_channel_ran_out:
+            case close_reason_t::sirius_cr_receipt_size_too_small:
+            {
+                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+                if ( torrent )
+                {
+                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                    if ( delegate )
+                    {
+                        printf("*xxx_rcpt_err* %s", delegate->dbgOurPeerName() );
+                        reinterpret_cast<char const*>(torrent->info_hash().v2.data());
 
+                        delegate->onError( close_reason,
+                                           m_other_peer_key,
+                                           *torrent->m_channelId,
+                                           *reinterpret_cast<const std::array<uint8_t,32>*>(torrent->info_hash().v2.data()) );
+                    }
+                }
+            }
+        }
+#endif
 		// decrement the stats counter
 		set_endgame(false);
 

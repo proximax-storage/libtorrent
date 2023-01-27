@@ -7,6 +7,8 @@
 
 #include "libtorrent/sha1_hash.hpp"
 #include <libtorrent/kademlia/ed25519.hpp>
+#include <libtorrent/error_code.hpp>
+#include <libtorrent/close_reason.hpp>
 
 #include <optional>
 
@@ -39,9 +41,10 @@ class session_delegate {
         virtual connection_status acceptClientConnection( const std::array<uint8_t,32>&  channelId,
                                                           const std::array<uint8_t,32>&  peerKey,
                                                           const std::array<uint8_t,32>&  driveKey,
-                                                          const std::array<uint8_t,32>&  fileHash )
+                                                          const std::array<uint8_t,32>&  fileHash,
+                                                          lt::errors::error_code_enum&   outErrorCode )
         {
-            // now client ignore connection from other client
+            outErrorCode = lt::errors::no_error;
             return connection_status::REJECTED;
         }
 
@@ -71,7 +74,8 @@ class session_delegate {
         // when 'downloader' requests piece
         virtual bool checkDownloadLimit( const std::array<uint8_t,32>&  peerKey,
                                          const std::array<uint8_t,32>&  downloadChannelId,
-                                         uint64_t                       downloadedSize )
+                                         uint64_t                       downloadedSize,
+                                         lt::errors::error_code_enum&   outErrorCode )
         {
             // 'client' always returns 'true'
             return true;
@@ -172,7 +176,8 @@ class session_delegate {
                                     const std::array<uint8_t,32>&  clientPublicKey,
                                     uint64_t                       downloadedSize,
                                     const std::array<uint8_t,64>&  signature,
-                                    bool&                          shouldBeDisconnected )
+                                    bool&                          shouldBeDisconnected,
+                                    lt::errors::error_code_enum&   outErrorCode )
         {
             // now 'client' does nothing in this case
         }
@@ -220,6 +225,14 @@ class session_delegate {
         virtual bool     isStopped()
         {
             return false;
+        }
+
+        virtual void      onError( lt::close_reason_t            errorCode,
+                                   const std::array<uint8_t,32>& replicatorKey,
+                                   const std::array<uint8_t,32>& channelHash,
+                                   const std::array<uint8_t,32>& infoHash )
+        {
+            // must be emplemented by Client
         }
 
         virtual const char* dbgOurPeerName() = 0;

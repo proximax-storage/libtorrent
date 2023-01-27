@@ -475,6 +475,15 @@ namespace errors {
 		torrent_inconsistent_hashes,
 		// a file in the v2 metadata has the pad attribute set
 		torrent_invalid_pad_file,
+        
+#ifdef SIRIUS_DRIVE_MULTI
+        // ! These should be sync with close_reason_t !
+        sirius_bad_signature,
+        sirius_no_channel,
+        sirius_no_client_in_channel,
+        sirius_channel_ran_out,
+        sirius_receipt_size_too_small, // receipt size exceeded sent size
+#endif
 
 		// the number of error codes
 		error_code_max

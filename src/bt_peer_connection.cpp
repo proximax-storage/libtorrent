@@ -1138,7 +1138,8 @@ namespace {
                 {
                     if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
                     {
-                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+//                     disconnect( errors::reserved, operation_t::unknown );
+                        disconnect( errors::no_error, operation_t::unknown );
                     }
                     return;
                 }
@@ -1149,36 +1150,41 @@ namespace {
                                                                    m_other_peer_key,       // client key
                                                                    r.length ) )
                 {
-                    if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
-                    {
-                        disconnect( errors::reserved, operation_t::unknown, peer_error );
-                    }
+                    // client always return "true"
+                    assert(0);
+//                    if ( torrent->m_siriusFlags & SiriusFlags::peer_is_replicator )
+//                    {
+//                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+//                    }
                     return;
                 }
 
                 if ( ! m_isDownloadUnlimited )
                 {
-                    // ?????+
                     bool shouldBeDisconnected;
+                    errors::error_code_enum errorCode;
                     delegate->acceptReceipt( m_other_peer_hash,       // download channel id
                                              m_other_peer_key,        // receiver public key
-                                             downloadedSize, signature, shouldBeDisconnected );
+                                             downloadedSize, signature, shouldBeDisconnected, errorCode );
                     if ( shouldBeDisconnected )
                     {
+#ifdef DEBUG
                         std::cerr << "+++ acceptReceipt returned false: break connection:" << is_outgoing()
                         << " dbgOurPeerName: " << delegate->dbgOurPeerName()
                         << " from: "  << (int)m_other_peer_key[0]
                         << " hash: "  << (int)m_other_peer_hash[0]
                         << " flags: " << torrent->m_siriusFlags
                         << std::endl << std::flush;
-
-                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+#endif
+//                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                        disconnect( errorCode, operation_t::unknown, peer_error );
                         return;
                     }
 
                     // check receipt limit
-                    if ( ! delegate->checkDownloadLimit( m_other_peer_key, m_other_peer_hash, downloadedSize ) )
+                    if ( ! delegate->checkDownloadLimit( m_other_peer_key, m_other_peer_hash, downloadedSize, errorCode ) )
                     {
+#ifdef DEBUG
                         // ignore request
                         std::cerr << "+++ checkDownloadLimit failed: outgoing:" << is_outgoing()
                         << " peer connection NOT established: " << delegate->dbgOurPeerName()
@@ -1186,8 +1192,9 @@ namespace {
                         << " hash: "  << (int)m_other_peer_hash[0]
                         << " flags: " << torrent->m_siriusFlags
                         << std::endl << std::flush;
-
-                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+#endif
+//                        disconnect( errors::reserved, operation_t::unknown, peer_error );
+                        disconnect( errorCode, operation_t::unknown, peer_error );
                         return;
                     }
 
@@ -3978,13 +3985,16 @@ namespace {
                         if ( hash.size() == 32 ) {
                             memcpy( &fileHash[0], &hash[0], 32 );
                         }
+                        errors::error_code_enum errorCode = lt::errors::error_code_enum::no_error;
                         auto connection_status = delegate->acceptClientConnection(
                                 m_other_peer_hash,
                                 m_other_peer_key,
                                 *torrent->m_driveKey,
-                                fileHash);
+                                fileHash,
+                                errorCode );
                         if ( connection_status == connection_status::REJECTED )
                         {
+#ifdef DEBUG
                             std::cerr << "info_hash:" << torrent->info_hash().v2 << std::endl;
                             std::cerr << "+++ ERROR? connection is not accepted '"
                                       << delegate->dbgOurPeerName()
@@ -3998,9 +4008,9 @@ namespace {
                                       << " "
                                       << m_remote.port()
                                       << std::endl;
+#endif
 
-                            //todo? - errors::error_code_max, operation_t::unknown
-                            disconnect( errors::reserved, operation_t::unknown );
+                            disconnect( errorCode, operation_t::unknown );
                             return;
                         }
                         if ( connection_status == connection_status::UNLIMITED ) {
@@ -4010,8 +4020,8 @@ namespace {
                     else // client connects to clent
                     {
                         // now it is not supported
-                        disconnect( errors::reserved, operation_t::unknown );
-                        return;
+//                        disconnect( errors::reserved, operation_t::unknown );
+//                        return;
                     }
                 }
             }
