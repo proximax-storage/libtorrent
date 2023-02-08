@@ -148,6 +148,15 @@ namespace libtorrent {
 
 		pex_message_too_big,
 		pex_too_frequent
+
+#ifdef SIRIUS_DRIVE_MULTI
+       ,sirius_cr_bad_signature,
+        sirius_cr_no_channel,
+        sirius_cr_no_client_in_channel,
+        sirius_cr_channel_ran_out,
+        sirius_cr_receipt_size_too_small, // receipt size exceeded sent size
+
+#endif
 	};
 
 	close_reason_t error_to_close_reason(error_code const& ec);

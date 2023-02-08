@@ -7,6 +7,8 @@
 
 #include "libtorrent/sha1_hash.hpp"
 #include <libtorrent/kademlia/ed25519.hpp>
+#include <libtorrent/error_code.hpp>
+#include <libtorrent/close_reason.hpp>
 
 #include <optional>
 
@@ -39,9 +41,10 @@ class session_delegate {
         virtual connection_status acceptClientConnection( const std::array<uint8_t,32>&  channelId,
                                                           const std::array<uint8_t,32>&  peerKey,
                                                           const std::array<uint8_t,32>&  driveKey,
-                                                          const std::array<uint8_t,32>&  fileHash )
+                                                          const std::array<uint8_t,32>&  fileHash,
+                                                          lt::errors::error_code_enum&   outErrorCode )
         {
-            // now client ignore connection from other client
+            outErrorCode = lt::errors::no_error;
             return connection_status::REJECTED;
         }
 
@@ -61,17 +64,18 @@ class session_delegate {
         {
         }
 
-        virtual uint8_t getUploadedSize( const std::array<uint8_t,32>& downloadChannelId )
-        {
-            // Now client does not calculate uploaded size (but not replivcator)
-            return 0;
-        }
+//        virtual uint8_t getUploadedSize( const std::array<uint8_t,32>& downloadChannelId )
+//        {
+//            // Now client does not calculate uploaded size (but not replivcator)
+//            return 0;
+//        }
 
         // It will be called on 'giving' side,
         // when 'downloader' requests piece
         virtual bool checkDownloadLimit( const std::array<uint8_t,32>&  peerKey,
                                          const std::array<uint8_t,32>&  downloadChannelId,
-                                         uint64_t                       downloadedSize )
+                                         uint64_t                       downloadedSize,
+                                         lt::errors::error_code_enum&   outErrorCode )
         {
             // 'client' always returns 'true'
             return true;
@@ -168,17 +172,39 @@ class session_delegate {
 
         // It will be called to verify receipt and then accept it
         // (must be implemented by DownloadLimiter)
-        virtual bool acceptReceipt( const std::array<uint8_t,32>&  downloadChannelId,
+        virtual void acceptReceipt( const std::array<uint8_t,32>&  downloadChannelId,
                                     const std::array<uint8_t,32>&  clientPublicKey,
-                                    const std::array<uint8_t,32>&  replicatorPublicKey,
                                     uint64_t                       downloadedSize,
-                                    const std::array<uint8_t,64>&  signature )
+                                    const std::array<uint8_t,64>&  signature,
+                                    bool&                          shouldBeDisconnected,
+                                    lt::errors::error_code_enum&   outErrorCode )
         {
             // now 'client' does nothing in this case
-            return true;
+        }
+    
+        // It will be used in handshake (when client downloads torrent)
+        //
+        virtual const std::vector<uint8_t>* getLastClientReceipt( const std::array<uint8_t,32>&  downloadChannelId,
+                                                                  const std::array<uint8_t,32>&  clientPublicKey )
+        {
+            // will be implemented by DownloadLimiter
+            return nullptr;
         }
 
-        // Replicator/Client public key
+        virtual void onLastMyReceipt( const std::vector<uint8_t>, const std::unique_ptr<std::array<uint8_t,32>>& channelId )
+        {
+            // will be implemented by Client
+        }
+
+        // It will be used when client request piece
+        //
+        virtual uint64_t requestedSize( const std::array<uint8_t,32>&  transactionHash,
+                                        const std::array<uint8_t,32>&  peerPublicKey )  = 0;
+
+        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  transactionHash,
+                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
+
+    // Replicator/Client public key
         virtual const std::array<uint8_t,32>& publicKey() = 0;
 
         // Endpoint associated with the key
@@ -192,16 +218,21 @@ class session_delegate {
         //virtual void setStartReceivedSize( uint64_t downloadedSize ) = 0;
 
         // They will be called when 'client' requests a piece fromonPieceReceived 'replicator' (handshake)
-        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  transactionHash,
-                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
-        virtual uint64_t requestedSize( const std::array<uint8_t,32>&  transactionHash,
-                                        const std::array<uint8_t,32>&  peerPublicKey )  = 0;
-    
+//        virtual uint64_t receivedSize( const std::array<uint8_t,32>&  transactionHash,
+//                                       const std::array<uint8_t,32>&  peerPublicKey ) = 0;
         virtual void     handleDhtResponse( lt::bdecode_node response, boost::asio::ip::udp::endpoint endpoint ) = 0;
 
         virtual bool     isStopped()
         {
             return false;
+        }
+
+        virtual void      onError( lt::close_reason_t            errorCode,
+                                   const std::array<uint8_t,32>& replicatorKey,
+                                   const std::array<uint8_t,32>& channelHash,
+                                   const std::array<uint8_t,32>& infoHash )
+        {
+            // must be emplemented by Client
         }
 
         virtual const char* dbgOurPeerName() = 0;

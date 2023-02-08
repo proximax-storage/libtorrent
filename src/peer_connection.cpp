@@ -871,7 +871,35 @@ namespace libtorrent {
 #if TORRENT_USE_ASSERTS
 		m_in_use = 0;
 #endif
+        
+#ifdef SIRIUS_DRIVE_MULTI
+        close_reason_t const close_reason = get_close_reason(m_socket);
+        switch( close_reason )
+        {
+            case close_reason_t::sirius_cr_bad_signature:
+            case close_reason_t::sirius_cr_no_channel:
+            case close_reason_t::sirius_cr_no_client_in_channel:
+            case close_reason_t::sirius_cr_channel_ran_out:
+            case close_reason_t::sirius_cr_receipt_size_too_small:
+            {
+                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+                if ( torrent )
+                {
+                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+                    if ( delegate )
+                    {
+                        printf("*xxx_rcpt_err* %s", delegate->dbgOurPeerName() );
+                        reinterpret_cast<char const*>(torrent->info_hash().v2.data());
 
+                        delegate->onError( close_reason,
+                                           m_other_peer_key,
+                                           *torrent->m_channelId,
+                                           *reinterpret_cast<const std::array<uint8_t,32>*>(torrent->info_hash().v2.data()) );
+                    }
+                }
+            }
+        }
+#endif
 		// decrement the stats counter
 		set_endgame(false);
 
@@ -5909,52 +5937,52 @@ namespace libtorrent {
 		m_socket_is_writing = true;
 #endif
 
-#ifdef SIRIUS_DRIVE_MULTI
-#pragma mark --payload--
-		// only if we use TCP sockets
-		if ( m_socket.which() == 0 )
-        {
-            auto& s = boost::get<tcp::socket>( m_socket );
-            s.async_write_some( vec, [this]( error_code const& error, std::size_t const bytes_transferred )
-            {
-                std::shared_ptr<torrent> torrent = associated_torrent().lock();
-                if ( torrent != nullptr )
-                {
-                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
-                    
-                    if ( delegate && !delegate->isClient() && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
-                    {
-                        int payload = m_send_buffer.getSentPayload( bytes_transferred );
-                        if ( payload > 0 )
-                        {
-                            delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, payload );
-                        }
-                    }
-                }
-
-#if TORRENT_USE_ASSERTS
-                try {
-                    if ( !m_destructed )
-                        on_send_data( error, bytes_transferred );
-                }
-                catch ( system_error const& e ) {
-                    on_error( e.code());
-                }
-                catch ( std::exception const& e ) {
-                    on_exception( e );
-                }
-                catch ( ... ) {
-                    // this is pretty bad
-                    TORRENT_ASSERT( false );
-                    std::runtime_error e( "unknown exception" );
-                    on_exception( e );
-                }
-#endif
-            } );
-        }
-		else
-        {
-#endif // #ifdef SIRIUS_DRIVE_MULTI
+//#ifdef SIRIUS_DRIVE_MULTI
+//#pragma mark --payload--
+//		// only if we use TCP sockets
+//		if ( m_socket.which() == 0 )
+//        {
+//            auto& s = boost::get<tcp::socket>( m_socket );
+//            s.async_write_some( vec, [this]( error_code const& error, std::size_t const bytes_transferred )
+//            {
+//                std::shared_ptr<torrent> torrent = associated_torrent().lock();
+//                if ( torrent != nullptr )
+//                {
+//                    std::shared_ptr<session_delegate> delegate = torrent->session().delegate().lock();
+//
+//                    if ( delegate && !delegate->isClient() && m_otherPeerSiriusFlags & SiriusFlags::client_is_receiver )
+//                    {
+//                        int payload = m_send_buffer.getSentPayload( bytes_transferred );
+//                        if ( payload > 0 )
+//                        {
+//                            delegate->onPieceSent( m_other_peer_hash, m_other_peer_key, payload );
+//                        }
+//                    }
+//                }
+//
+//#if TORRENT_USE_ASSERTS
+//                try {
+//                    if ( !m_destructed )
+//                        on_send_data( error, bytes_transferred );
+//                }
+//                catch ( system_error const& e ) {
+//                    on_error( e.code());
+//                }
+//                catch ( std::exception const& e ) {
+//                    on_exception( e );
+//                }
+//                catch ( ... ) {
+//                    // this is pretty bad
+//                    TORRENT_ASSERT( false );
+//                    std::runtime_error e( "unknown exception" );
+//                    on_exception( e );
+//                }
+//#endif
+//            } );
+//        }
+//		else
+//        {
+//#endif // #ifdef SIRIUS_DRIVE_MULTI
             using write_handler_type = aux::handler<
                 peer_connection
                 , decltype(&peer_connection::on_send_data)
@@ -5968,9 +5996,9 @@ namespace libtorrent {
                 , "write handler does not have the expected size");
 
             m_socket.async_write_some(vec, write_handler_type(self()));
-#ifdef SIRIUS_DRIVE_MULTI
-        }
-#endif
+//#ifdef SIRIUS_DRIVE_MULTI
+//        }
+//#endif
 
 		m_channel_state[upload_channel] |= peer_info::bw_network;
 		m_last_sent.set(m_connect, aux::time_now());

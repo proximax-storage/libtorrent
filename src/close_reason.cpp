@@ -126,6 +126,18 @@ namespace libtorrent {
 					return close_reason_t::none;
 #endif
 
+#ifdef SIRIUS_DRIVE_MULTI
+            case errors::sirius_bad_signature:
+                return close_reason_t::sirius_cr_bad_signature;
+            case errors::sirius_no_channel:
+                return close_reason_t::sirius_cr_no_channel;
+            case errors::sirius_no_client_in_channel:
+                return close_reason_t::sirius_cr_no_client_in_channel;
+            case errors::sirius_channel_ran_out:
+                return close_reason_t::sirius_cr_channel_ran_out;
+            case errors::sirius_receipt_size_too_small:
+                return close_reason_t::sirius_cr_receipt_size_too_small;
+#endif
 				default:
 					return close_reason_t::none;
 			}
