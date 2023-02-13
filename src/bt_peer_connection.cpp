@@ -1132,7 +1132,8 @@ namespace {
 
             if ( m_otherPeerSiriusFlags & SiriusFlags::peer_is_replicator )
             {
-                if ( ! delegate->onPieceRequestReceivedFromReplicator( m_other_peer_hash,  // modifyTx
+                assert( torrent->m_driveKey );
+                if ( ! delegate->onPieceRequestReceivedFromReplicator( *torrent->m_driveKey,
                                                                        m_other_peer_key,   // replicator key
                                                                        r.length ) )
                 {
@@ -1314,9 +1315,9 @@ namespace {
 		    return;
 		}
 
-        if (  torrent->m_modifyTx )
+        if (  torrent->m_modifyTx && torrent->m_driveKey)
         {
-            delegate->onPieceReceived( *torrent->m_modifyTx, m_other_peer_key, p.length);
+            delegate->onPieceReceived( *torrent->m_driveKey, m_other_peer_key, p.length);
         }
         else if (  torrent->m_channelId )
         {
