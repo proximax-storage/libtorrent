@@ -403,6 +403,7 @@ TORRENT_VERSION_NAMESPACE_3
         std::optional<std::array<uint8_t,32>>   m_channelId;
 
         // ModifyTx could be set by client and replicator
+        // (It is not used by any receiver, so it could be removed later)
         std::optional<std::array<uint8_t,32>>   m_modifyTx;
 
 #endif
