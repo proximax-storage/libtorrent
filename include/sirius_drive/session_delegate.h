@@ -37,6 +37,8 @@ class session_delegate {
         virtual bool isClient() const = 0;
     
         virtual void onTorrentDeleted( lt::torrent_handle ) = 0;
+
+        virtual void onCacheFlushed( lt::torrent_handle ) = 0;
     
         virtual connection_status acceptClientConnection( const std::array<uint8_t,32>&  channelId,
                                                           const std::array<uint8_t,32>&  peerKey,

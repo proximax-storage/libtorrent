@@ -9310,6 +9310,16 @@ namespace {
 
 		if (m_ses.is_aborted()) return;
 
+#ifdef SIRIUS_DRIVE_MULTI
+		if (!manually_triggered)
+		{
+		    if ( auto delegate = m_ses.delegate().lock(); delegate )
+		    {
+		        delegate->onCacheFlushed( get_handle() );
+		    }
+		}
+#endif
+
 		if (manually_triggered || alerts().should_post<cache_flushed_alert>())
 			alerts().emplace_alert<cache_flushed_alert>(get_handle());
 	}
