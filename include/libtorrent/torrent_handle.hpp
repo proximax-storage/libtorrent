@@ -205,9 +205,12 @@ namespace aux {
 #endif
 	};
 
-	// for std::hash (and to support using this type in unordered_map etc.)
-	std::size_t hash_value(torrent_handle const& h);
-
+    // for std::hash (and to support using this type in unordered_map etc.)
+#if _MSC_VER
+    TORRENT_EXPORT std::size_t hash_value(torrent_handle const& h);
+#else
+    std::size_t hash_value(torrent_handle const& h);
+#endif
 	// You will usually have to store your torrent handles somewhere, since it's
 	// the object through which you retrieve information about the torrent and
 	// aborts the torrent.
