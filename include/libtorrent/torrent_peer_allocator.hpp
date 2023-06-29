@@ -45,7 +45,8 @@ namespace libtorrent {
 		{
 			ipv4_peer_type,
 			ipv6_peer_type,
-			i2p_peer_type
+            i2p_peer_type,
+            rtc_peer_type
 		};
 
 		virtual torrent_peer* allocate_peer_entry(int type) = 0;
@@ -82,6 +83,10 @@ namespace libtorrent {
 		aux::pool m_ipv6_peer_pool{sizeof(libtorrent::ipv6_peer), 500};
 #if TORRENT_USE_I2P
 		aux::pool m_i2p_peer_pool{sizeof(libtorrent::i2p_peer), 500};
+#endif
+
+#if TORRENT_USE_RTC
+        boost::pool<> m_rtc_peer_pool{sizeof(libtorrent::rtc_peer), 500};
 #endif
 
 		// the total number of bytes allocated (cumulative)

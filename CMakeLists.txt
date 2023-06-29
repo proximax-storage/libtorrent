@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS ON)
 add_definitions(-w)
 add_definitions(-DSIRIUS_INTEREST_MESSAGE_ENABLED)
 add_definitions(-DSIRIUS_CHOKE_MESSAGE_ENABLED)
+add_definitions(-DTORRENT_USE_RTC)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 include(LibtorrentMacros)
@@ -54,6 +55,7 @@ set(libtorrent_include_files
 	client_data.hpp
 	close_reason.hpp
 	config.hpp
+	ConvertUTF.h
 	copy_ptr.hpp
 	crc32c.hpp
 	create_torrent.hpp
@@ -165,7 +167,6 @@ set(libtorrent_include_files
 	union_endpoint.hpp
 	units.hpp
 	upnp.hpp
-	utf8.hpp
 	vector_utils.hpp
 	version.hpp
 	web_connection_base.hpp
@@ -294,6 +295,11 @@ set(libtorrent_aux_include_files
 	vector.hpp
 	win_crypto_provider.hpp
 	win_util.hpp
+	rtc_signaling.hpp
+	rtc_stream.hpp
+	websocket_stream.hpp
+	websocket_tracker_connection.hpp
+	utf8.hpp
 )
 
 set(try_signal_include_files
@@ -383,6 +389,10 @@ set(sources
 	posix_disk_io.cpp
 	posix_part_file.cpp
 	posix_storage.cpp
+	rtc_signaling.cpp
+	rtc_stream.cpp
+	websocket_stream.cpp
+	websocket_tracker_connection.cpp
 	proxy_base.cpp
 	proxy_settings.cpp
 	puff.cpp
@@ -482,6 +492,248 @@ set(try_signal_sources
 	signal_error_code.cpp
 )
 
+set(datachannel_juice_sources
+		ice.c
+		const_time.c
+		hash.c
+		log.c
+		conn_thread.c
+		udp.c
+		crc32.c
+		timestamp.c
+		hmac.c
+		server.c
+		juice.c
+		turn.c
+		stun.c
+		random.c
+		conn_poll.c
+		conn_mux.c
+		conn.c
+		base64.c
+		agent.c
+		addr.c
+)
+
+set(datachannel_juice_headers
+		juice.h
+)
+
+set(datachannel_srtp_sources
+  srtp/srtp.c
+)
+
+set(datachannel_srtp_crypto_cipher_sources
+  crypto/cipher/cipher.cpp
+  crypto/cipher/null_cipher.cpp
+)
+
+if(ENABLE_OPENSSL)
+  list(APPEND datachannel_srtp_crypto_cipher_sources
+    crypto/cipher/aes_icm_ossl.cpp
+    crypto/cipher/aes_gcm_ossl.cpp
+  )
+else()
+  list(APPEND datachannel_srtp_crypto_cipher_sources
+    crypto/cipher/aes.cpp
+    crypto/cipher/aes_icm.cpp
+  )
+endif()
+
+set(datachannel_srtp_crypto_hashes_sources
+    crypto/hash/auth.cpp
+    crypto/hash/null_auth.cpp
+)
+
+if(ENABLE_OPENSSL)
+  list(APPEND datachannel_srtp_crypto_hashes_sources
+    crypto/hash/hmac_ossl.cpp
+  )
+else()
+  list(APPEND  datachannel_srtp_crypto_hashes_sources
+    crypto/hash/hmac.cpp
+    crypto/hash/sha1.cpp
+  )
+endif()
+
+set(datachannel_srtp_crypto_kernel_sources
+  crypto/kernel/alloc.cpp
+  crypto/kernel/crypto_kernel.cpp
+  crypto/kernel/err.cpp
+  crypto/kernel/key.cpp
+)
+
+set(datachannel_srtp_crypto_math_sources
+  crypto/math/datatypes.cpp
+  crypto/math/stat.cpp
+)
+
+set(datachannel_srtp_crypto_replay_sources
+  crypto/replay/rdb.cpp
+  crypto/replay/rdbx.cpp
+  crypto/replay/ut_sim.cpp
+)
+
+set(datachannel_srtp_config_header
+	config.h
+)
+
+set(datachannel_srtp_headers
+  crypto/include/aes.h
+  crypto/include/aes_icm.h
+  crypto/include/alloc.h
+  crypto/include/auth.h
+  crypto/include/cipher.h
+  crypto/include/cipher_types.h
+  crypto/include/crypto_kernel.h
+  crypto/include/crypto_types.h
+  crypto/include/datatypes.h
+  crypto/include/err.h
+  crypto/include/hmac.h
+  crypto/include/integers.h
+  crypto/include/key.h
+  crypto/include/null_auth.h
+  crypto/include/null_cipher.h
+  crypto/include/rdb.h
+  crypto/include/rdbx.h
+  crypto/include/sha1.h
+  include/srtp.h
+  include/srtp_priv.h
+)
+
+set(datachannel_usrsctp_sources
+		user_environment.c
+		user_mbuf.c
+		user_recv_thread.c
+		user_socket.c
+)
+
+set(datachannel_headers
+		candidate.hpp
+		channel.hpp
+		common.hpp
+		configuration.hpp
+		datachannel.hpp
+		description.hpp
+		global.hpp
+		h264packetizationhandler.hpp
+		h264rtppacketizer.hpp
+		mediachainablehandler.hpp
+		mediahandler.hpp
+		mediahandlerelement.hpp
+		mediahandlerrootelement.hpp
+		message.hpp
+		nalunit.hpp
+		opuspacketizationhandler.hpp
+		opusrtppacketizer.hpp
+		peerconnection.hpp
+		reliability.hpp
+		rtc.h
+		rtc.hpp
+		rtcpnackresponder.hpp
+		rtcpreceivingsession.hpp
+		rtcpsrreporter.hpp
+		rtp.hpp
+		rtppacketizationconfig.hpp
+		rtppacketizer.hpp
+		track.hpp
+		utils.hpp
+		websocket.hpp
+		websocketserver.hpp
+)
+
+set(datachannel_sources
+		candidate.cpp
+		capi.cpp
+		channel.cpp
+		configuration.cpp
+		datachannel.cpp
+		description.cpp
+		global.cpp
+		h264packetizationhandler.cpp
+		h264rtppacketizer.cpp
+		mediachainablehandler.cpp
+		mediahandlerelement.cpp
+		mediahandlerrootelement.cpp
+		message.cpp
+		nalunit.cpp
+		opuspacketizationhandler.cpp
+		opusrtppacketizer.cpp
+		peerconnection.cpp
+		rtcpnackresponder.cpp
+		rtcpreceivingsession.cpp
+		rtcpsrreporter.cpp
+		rtp.cpp
+		rtppacketizationconfig.cpp
+		rtppacketizer.cpp
+		track.cpp
+		websocket.cpp
+		websocketserver.cpp
+)
+
+set(datachannel_headers_impl
+		certificate.hpp
+		channel.hpp
+		datachannel.hpp
+		dtlssrtptransport.hpp
+		dtlstransport.hpp
+		icetransport.hpp
+		init.hpp
+		internals.hpp
+		logcounter.hpp
+		peerconnection.hpp
+		pollinterrupter.hpp
+		pollservice.hpp
+		processor.hpp
+		queue.hpp
+		sctptransport.hpp
+		sha.hpp
+		tcpserver.hpp
+		tcptransport.hpp
+		socket.hpp
+		threadpool.hpp
+		tls.hpp
+		tlstransport.hpp
+		track.hpp
+		transport.hpp
+		utils.hpp
+		verifiedtlstransport.hpp
+		websocket.hpp
+		websocketserver.hpp
+		wshandshake.hpp
+		wstransport.hpp
+)
+
+set(datachannel_sources_impl
+		track.cpp
+		websocketserver.cpp
+		tcpserver.cpp
+		wstransport.cpp
+		transport.cpp
+		tlstransport.cpp
+		verifiedtlstransport.cpp
+		utils.cpp
+		wshandshake.cpp
+		threadpool.cpp
+		tls.cpp
+		websocket.cpp
+		tcptransport.cpp
+		sctptransport.cpp
+		sha.cpp
+		processor.cpp
+		pollservice.cpp
+		pollinterrupter.cpp
+		peerconnection.cpp
+		logcounter.cpp
+		init.cpp
+		icetransport.cpp
+		dtlstransport.cpp
+		dtlssrtptransport.cpp
+		datachannel.cpp
+		channel.cpp
+		certificate.cpp
+)
+
 set(sirius_drive
 	session_delegate.h
 )
@@ -493,7 +745,25 @@ list(TRANSFORM libtorrent_include_files PREPEND "include/libtorrent/")
 list(TRANSFORM libtorrent_extensions_include_files PREPEND "include/libtorrent/extensions/")
 list(TRANSFORM libtorrent_aux_include_files PREPEND "include/libtorrent/aux_/")
 list(TRANSFORM libtorrent_kademlia_include_files PREPEND "include/libtorrent/kademlia/")
+
 list(TRANSFORM try_signal_sources PREPEND "deps/try_signal/")
+
+list(TRANSFORM datachannel_juice_sources PREPEND "deps/libdatachannel/deps/libjuice/src/")
+list(TRANSFORM datachannel_juice_headers PREPEND "deps/libdatachannel/deps/libjuice/include/juice/")
+list(TRANSFORM datachannel_srtp_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_headers PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_crypto_cipher_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_crypto_hashes_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_crypto_kernel_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_crypto_math_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_crypto_replay_sources PREPEND "deps/libdatachannel/deps/libsrtp/")
+list(TRANSFORM datachannel_srtp_config_header PREPEND "${CONFIG_FILE_DIR}")
+list(TRANSFORM datachannel_usrsctp_sources PREPEND "deps/libdatachannel/deps/usrsctp/usrsctplib/")
+list(TRANSFORM datachannel_headers PREPEND "deps/libdatachannel/include/rtc/")
+list(TRANSFORM datachannel_sources PREPEND "deps/libdatachannel/src/")
+list(TRANSFORM datachannel_headers_impl PREPEND "deps/libdatachannel/src/impl/")
+list(TRANSFORM datachannel_sources_impl PREPEND "deps/libdatachannel/src/impl/")
+
 list(TRANSFORM sirius_drive PREPEND "include/sirius_drive/")
 
 # these options control target creation and thus have to be declared before the add_library() call
@@ -503,33 +773,29 @@ feature_option(static_runtime "build libtorrent with static runtime" OFF)
 find_public_dependency(Threads REQUIRED)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
-	add_compile_options(
-		-Weverything
-		-Wno-c++98-compat-pedantic
-		-Wno-c++11-compat-pedantic
-		-Wno-padded
-		-Wno-alloca
-		-Wno-global-constructors
-		-Wno-exit-time-destructors
-		-Wno-weak-vtables
-		-Wno-return-std-move-in-c++11
-		-Wno-unknown-warning-option
-	)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+		-Weverything \
+		-Wno-documentation \
+		-Wno-c++98-compat-pedantic \
+		-Wno-padded \
+		-Wno-global-constructors \
+		-Wno-exit-time-destructors \
+		-Wno-weak-vtables \
+		-Wno-return-std-move-in-c++11 \
+		-Wno-unknown-warning-option \
+		-fpermissive")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES GNU)
-	add_compile_options(
-		-Wall
-		-Wc++11-compat
-		-Wextra
-		-Wno-format-zero-length
-		-Wparentheses
-		-Wpedantic
-		-Wvla
-		-Wno-c++11-compat
-		-Wno-format-zero-length
-		-Wno-noexcept-type
-		-ftemplate-depth=512
-		-O2
-	)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+		-Wall \
+		-Wextra \
+		-Wpedantic \
+		-Wparentheses \
+		-Wvla \
+		-Wc++11-compat \
+		-Wno-format-zero-length \
+		-Wno-noexcept-type \
+		-ftemplate-depth=512 \
+		-fpermissive")
 elseif(MSVC)
 	add_compile_options(
 		# https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
@@ -574,6 +840,16 @@ set(BUILD_SHARED_LIBS TORRENT_SHARED_LIB)
 add_library(torrent-sirius
 	${sources}
 	${try_signal_sources}
+	${datachannel_juice_sources}
+	${datachannel_juice_headers}
+	${datachannel_srtp_sources}
+	${datachannel_srtp_headers}
+	${datachannel_srtp_config_header}
+	${datachannel_usrsctp_sources}
+	${datachannel_headers}
+	${datachannel_sources}
+	${datachannel_headers_impl}
+	${datachannel_sources_impl}
 	${libtorrent_include_files}
 	${libtorrent_extensions_include_files}
 	${libtorrent_aux_include_files}
@@ -614,6 +890,15 @@ set_target_properties(torrent-sirius
 target_include_directories(torrent-sirius PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+	PRIVATE deps/libdatachannel/deps/libjuice/include
+	PRIVATE deps/libdatachannel/deps/libjuice/include/juice
+	PRIVATE ${CONFIG_FILE_DIR}/
+	PRIVATE deps/libdatachannel/deps/libsrtp/crypto/include
+	PRIVATE deps/libdatachannel/deps/libsrtp/include
+	PRIVATE deps/libdatachannel/deps/plog/include
+	PRIVATE deps/libdatachannel/deps/usrsctp/usrsctplib
+	PRIVATE deps/libdatachannel/include
+	PRIVATE deps/libdatachannel/include/rtc
 	PRIVATE deps/try_signal
 )
 
@@ -735,6 +1020,8 @@ target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME extension
 	DESCRIPTION "Enables protocol extensions" DISABLED TORRENT_DISABLE_EXTENSIONS)
 target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME i2p DEFAULT ON
 	DESCRIPTION "build with I2P support" DISABLED TORRENT_USE_I2P=0)
+target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME webtorrent DEFAULT ON
+		DESCRIPTION "build with WebTorrent support" DISABLED TORRENT_USE_RTC=1)
 target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME logging DEFAULT ON
 	DESCRIPTION "build with logging" DISABLED TORRENT_DISABLE_LOGGING)
 target_optional_compile_definitions(torrent-sirius PUBLIC FEATURE NAME mutable-torrents DEFAULT ON
@@ -826,6 +1113,60 @@ if (dht)
 	)
 else()
 	target_compile_definitions(torrent-sirius PUBLIC TORRENT_DISABLE_DHT)
+endif()
+
+if (webtorrent)
+	find_package(OpenSSL REQUIRED)
+
+	set(OPENSSL ${ENABLE_OPENSSL} CACHE BOOL INTERNAL)
+	set(GCM ${ENABLE_OPENSSL} CACHE BOOL INTERNAL)
+	set(CONFIG_FILE_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+	add_definitions(-D__Userspace__)
+	add_definitions(-DSCTP_SIMPLE_ALLOCATOR)
+	add_definitions(-DSCTP_PROCESS_LEVEL_LOCKS)
+	add_definitions(-DHAVE_CONFIG_H)
+
+	include_directories(${CONFIG_FILE_DIR})
+	include_directories(${OPENSSL_INCLUDE_DIR})
+
+	check_include_file(arpa/inet.h HAVE_ARPA_INET_H)
+	check_include_file(byteswap.h HAVE_BYTESWAP_H)
+	check_include_file(inttypes.h HAVE_INTTYPES_H)
+	check_include_file(machine/types.h HAVE_MACHINE_TYPES_H)
+	check_include_file(netinet/in.h HAVE_NETINET_IN_H)
+	check_include_file(stdint.h HAVE_STDINT_H)
+	check_include_file(stdlib.h HAVE_STDLIB_H)
+	check_include_file(sys/int_types.h HAVE_SYS_INT_TYPES_H)
+	check_include_file(sys/socket.h HAVE_SYS_SOCKET_H)
+	check_include_file(sys/types.h HAVE_SYS_TYPES_H)
+	check_include_file(unistd.h HAVE_UNISTD_H)
+	check_include_file(windows.h HAVE_WINDOWS_H)
+	check_include_file(winsock2.h HAVE_WINSOCK2_H)
+	check_c_source_compiles("inline void func(); void func() { } int main() { func(); return 0; }" HAVE_INLINE)
+	configure_file(deps/libdatachannel/deps/libsrtp/config_in_cmake.h ${CONFIG_FILE_DIR}/config.h)
+
+
+	if(NOT HAVE_INLINE)
+	  check_c_source_compiles("__inline void func(); void func() { } int main() { func(); return 0; }" HAVE___INLINE)
+	endif()
+
+	if(GNUTLS_FOUND)
+		option(USE_GNUTLS "Use GnuTLS instead of OpenSSL for libdatachannel" ON)
+	else()
+		option(USE_GNUTLS "Use GnuTLS instead of OpenSSL for libdatachannel" OFF)
+	endif()
+
+	option(USE_NETTLE "Use Nettle in libjuice" OFF)
+	option(ENABLE_OPENSSL "Enable OpenSSL crypto engine for SRTP" ON)
+
+	#add_subdirectory(deps/libdatachannel EXCLUDE_FROM_ALL)
+	add_subdirectory(deps/libdatachannel/deps/libsrtp EXCLUDE_FROM_ALL)
+	add_subdirectory(deps/libdatachannel/deps/libjuice EXCLUDE_FROM_ALL)
+
+	target_compile_definitions(torrent-sirius PRIVATE USE_NICE=0)
+	target_compile_definitions(torrent-sirius PRIVATE RTC_SYSTEM_SRTP=0)
+	target_compile_definitions(torrent-sirius PRIVATE USE_GNUTLS=0)
 endif()
 
 # Boost
@@ -970,12 +1311,12 @@ install(
 )
 
 if (MSVC)
-	add_library(torrent-rasterbar ${CMAKE_CURRENT_SOURCE_DIR})
-	set_target_properties(torrent-rasterbar
+	add_library(torrent-sirius ${CMAKE_CURRENT_SOURCE_DIR})
+	set_target_properties(torrent-sirius
 	PROPERTIES
-		PDB_NAME torrent-rasterbar
+		PDB_NAME torrent-sirius
 		PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-		COMPILE_PDB_NAME torrent-rasterbar
+		COMPILE_PDB_NAME torrent-sirius
 		COMPILE_PDB_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
 		LINKER_LANGUAGE C++
 	)
@@ -988,7 +1329,7 @@ if (MSVC)
 
 	install(
 		FILES
-			${CMAKE_BINARY_DIR}/torrent-rasterbar.pdb
+			${CMAKE_BINARY_DIR}/torrent-sirius.pdb
 		DESTINATION
 			${PDB_INSTALL_DIR}
 		CONFIGURATIONS

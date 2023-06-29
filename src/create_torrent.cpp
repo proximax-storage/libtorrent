@@ -35,7 +35,7 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "libtorrent/create_torrent.hpp"
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/mmap_disk_io.hpp" // for hasher_thread_divisor
 #include "libtorrent/disk_interface.hpp"
 #include "libtorrent/aux_/merkle.hpp" // for merkle_*()

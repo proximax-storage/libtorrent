@@ -35,7 +35,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/file_storage.hpp"
 #include "libtorrent/string_util.hpp" // for allocate_string_copy
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/index_range.hpp"
 #include "libtorrent/aux_/path.hpp"
 #include "libtorrent/aux_/numeric_cast.hpp"

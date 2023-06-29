@@ -159,7 +159,7 @@
 #include "libtorrent/union_endpoint.hpp"
 #include "libtorrent/units.hpp"
 #include "libtorrent/upnp.hpp"
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/vector_utils.hpp"
 #include "libtorrent/version.hpp"
 #include "libtorrent/web_connection_base.hpp"

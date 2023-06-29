@@ -159,6 +159,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #define TORRENT_HAVE_MMAP 1
 #endif
 
+#define TORRENT_USE_RTC 1
+#define DEBUG_RTC 1
 #define TORRENT_HAS_SYMLINK 1
 #define TORRENT_USE_MADVISE 1
 #define TORRENT_USE_NETLINK 1
@@ -620,6 +622,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #if defined TORRENT_SSL_PEERS && !TORRENT_USE_SSL
 #error compiling with TORRENT_SSL_PEERS requires TORRENT_USE_OPENSSL or TORRENT_USE_GNUTLS
+#endif
+
+#if TORRENT_USE_RTC && !TORRENT_USE_SSL
+#error compiling with TORRENT_USE_RTC requires TORRENT_USE_OPENSSL or TORRENT_USE_GNUTLS
 #endif
 
 #include "libtorrent/aux_/export.hpp"

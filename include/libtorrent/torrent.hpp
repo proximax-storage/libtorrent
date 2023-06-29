@@ -92,16 +92,9 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/extensions.hpp" // for add_peer_flags_t
 #include "libtorrent/ssl.hpp"
 
-#ifdef TORRENT_SSL_PEERS
-// there is no forward declaration header for asio
-namespace boost {
-namespace asio {
-namespace ssl {
-	class context;
-	class verify_context;
-}
-}
-}
+#if TORRENT_USE_RTC
+#include "libtorrent/aux_/rtc_signaling.hpp"
+#include "libtorrent/aux_/rtc_stream.hpp"
 #endif
 
 #if TORRENT_COMPLETE_TYPES_REQUIRED
@@ -640,6 +633,7 @@ namespace libtorrent {
 
 		void connect_to_url_seed(std::list<web_seed_t>::iterator);
 		bool connect_to_peer(torrent_peer*, bool ignore_limit = false);
+        bool create_peer_connection(torrent_peer* peerinfo, aux::socket_type socket, tcp::endpoint endpoint);
 
 		int priority() const;
 #if TORRENT_ABI_VERSION == 1
@@ -752,6 +746,14 @@ namespace libtorrent {
 
 		void update_auto_sequential();
 	private:
+
+#if TORRENT_USE_RTC
+        void generate_rtc_offers(int count, std::function<void(error_code const&, std::vector<aux::rtc_offer>)> handler) override;
+        void on_rtc_offer(aux::rtc_offer const& offer) override;
+        void on_rtc_answer(aux::rtc_answer const& answer) override;
+        void on_rtc_stream(peer_id const& pid, aux::rtc_stream_init stream_init);
+#endif
+
 		void remove_connection(peer_connection const* p);
 	public:
 // --------------------------------------------
@@ -796,7 +798,7 @@ namespace libtorrent {
 		// forcefully sets next_announce to the current time
 		void force_tracker_request(time_point, int tracker_idx, reannounce_flags_t flags);
 		void scrape_tracker(int idx, bool user_triggered);
-		void announce_with_tracker(event_t = event_t::none);
+        void announce_with_tracker(event_t e = event_t::none);
 
 #ifndef TORRENT_DISABLE_DHT
 		void dht_announce();
@@ -1799,6 +1801,10 @@ namespace libtorrent {
 		// this is set to true while we're looping over m_connections. We may not
 		// mutate the list while doing this
 		mutable int m_iterating_connections = 0;
+#endif
+
+#if TORRENT_USE_RTC
+        std::shared_ptr<aux::rtc_signaling> m_rtc_signaling;
 #endif
 
 #ifdef SIRIUS_DRIVE_MULTI

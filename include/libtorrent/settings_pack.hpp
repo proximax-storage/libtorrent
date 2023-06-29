@@ -377,6 +377,10 @@ namespace aux {
 			// effect until the DHT is restarted.
 			dht_bootstrap_nodes,
 
+            // This is the STUN server used by WebTorrent to enable ICE NAT
+            // traversal for WebRTC. It must have the format ``hostname:port``.
+            webtorrent_stun_server,
+
 			max_string_setting_internal
 		};
 
@@ -1947,6 +1951,15 @@ namespace aux {
 			// announcing and refreshing the routing table. This parameter is called
 			// alpha in the kademlia paper
 			dht_search_branching,
+
+            // this is the minimum allowed announce interval for a WebSocket
+            // tracker used by WebTorrent to signal WebRTC connections. This is
+            // specified in seconds and is used as a sanity check on what is
+            // returned from a tracker.
+            min_websocket_announce_interval,
+
+            // the WebRTC connection timeout used by WebTorrent (in seconds)
+            webtorrent_connection_timeout,
 
 			// the maximum number of failed tries to contact a node before it is
 			// removed from the routing table. If there are known working nodes that

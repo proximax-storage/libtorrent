@@ -140,7 +140,8 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(i2p_hostname, "", &session_impl::update_i2p_bridge),
 		SET(peer_fingerprint, "-LT2040-", nullptr),
 //#ifndef SIRIUS_DRIVE
-        SET(dht_bootstrap_nodes, "dht.libtorrent.org:25401", &session_impl::update_dht_bootstrap_nodes)
+        SET(dht_bootstrap_nodes, "dht.libtorrent.org:25401", &session_impl::update_dht_bootstrap_nodes),
+        SET(webtorrent_stun_server, "stun.l.google.com:19302", nullptr)
 //#endif
 	}});
 
@@ -388,6 +389,8 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(dht_max_infohashes_sample_count, 20, nullptr),
 		SET(max_piece_count, 0x200000, nullptr),
 		SET(metadata_token_limit, 2500000, nullptr),
+        SET(min_websocket_announce_interval, 1 * 60, nullptr),
+        SET(webtorrent_connection_timeout, 2 * 60, nullptr)
 	}});
 
 #undef SET

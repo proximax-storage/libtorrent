@@ -2823,6 +2823,7 @@ bool is_downloading_state(int const st)
 namespace {
 	void refresh_endpoint_list(aux::session_interface& ses
 		, bool const is_ssl, bool const complete_sent
+        , string_view url
 		, std::vector<aux::announce_endpoint>& aeps)
 	{
 		// update the endpoint list by adding entries for new listen sockets
@@ -2843,6 +2844,21 @@ namespace {
 			std::swap(aeps[valid_endpoints], aeps.back());
 			valid_endpoints++;
 		});
+
+#if TORRENT_USE_RTC
+        if(auto pos = url.find(':'); pos != string_view::npos)
+        {
+            string_view const protocol = url.substr(0, pos);
+            if (protocol == "ws" || protocol == "wss")
+            {
+                // WebSocket trackers will ignore the endpoint anyway
+                valid_endpoints = std::min(valid_endpoints, std::size_t(1));
+
+            }
+        }
+#else
+            TORRENT_UNUSED(url);
+#endif
 
 		TORRENT_ASSERT(valid_endpoints <= aeps.size());
 		aeps.erase(aeps.begin() + int(valid_endpoints), aeps.end());
@@ -3042,7 +3058,7 @@ namespace {
 #ifndef TORRENT_DISABLE_LOGGING
 			++idx;
 #endif
-			refresh_endpoint_list(m_ses, is_ssl_torrent(), bool(m_complete_sent), ae.endpoints);
+            refresh_endpoint_list(m_ses, is_ssl_torrent(), bool(m_complete_sent), ae.url, ae.endpoints);
 
 			// if trackerid is not specified for tracker use default one, probably set explicitly
 			req.trackerid = ae.trackerid.empty() ? m_trackerid : ae.trackerid;
@@ -3235,7 +3251,7 @@ namespace {
 
 		req.kind |= tracker_request::scrape_request;
 		auto& ae = m_trackers[idx];
-		refresh_endpoint_list(m_ses, is_ssl_torrent(), bool(m_complete_sent), ae.endpoints);
+        refresh_endpoint_list(m_ses, is_ssl_torrent(), bool(m_complete_sent), ae.url, ae.endpoints);
 		req.url = ae.url;
 		req.private_torrent = m_torrent_file->priv();
 #if TORRENT_ABI_VERSION == 1
@@ -3385,9 +3401,6 @@ namespace {
 		protocol_version const v = r.info_hash == torrent_file().info_hashes().v1
 			? protocol_version::V1 : protocol_version::V2;
 
-		auto const interval = std::max(resp.interval, seconds32(
-			settings().get_int(settings_pack::min_announce_interval)));
-
 		aux::announce_entry* ae = find_tracker(r.url);
 		tcp::endpoint local_endpoint;
 		if (ae)
@@ -3412,7 +3425,7 @@ namespace {
 					m_complete_sent = true;
 				}
 				ae->verified = true;
-				a.next_announce = now + interval;
+                a.next_announce = now + resp.interval;
 				a.min_announce = now + resp.min_interval;
 				a.updating = false;
 				a.fails = 0;
@@ -3450,7 +3463,7 @@ namespace {
 			}
 			debug_log("TRACKER RESPONSE [ interval: %d | min-interval: %d | "
 				"external ip: %s | resolved to: %s | we connected to: %s ]"
-				, interval.count()
+				, resp.interval.count()
 				, resp.min_interval.count()
 				, print_address(resp.external_ip).c_str()
 				, resolved_to.c_str()
@@ -4790,6 +4803,11 @@ namespace {
 		}
 		// don't re-add this torrent to the state-update list
 		m_state_subscription = false;
+
+#if TORRENT_USE_RTC
+        if(m_rtc_signaling)
+            m_rtc_signaling->close();
+#endif
 	}
 
 	// this is called when we're destructing non-gracefully. i.e. we're _just_
@@ -5970,6 +5988,49 @@ namespace {
 	{
 		set_error(ec, torrent_status::error_file_none);
 	}
+
+#if TORRENT_USE_RTC
+    void torrent::generate_rtc_offers(int count
+            , std::function<void(error_code const&, std::vector<aux::rtc_offer>)> handler)
+    {
+        // rtc_signaling is created lazily
+        if(!m_rtc_signaling)
+        {
+            m_rtc_signaling = std::make_shared<aux::rtc_signaling>(m_ses.get_context()
+                    , this
+                    , std::bind(&torrent::on_rtc_stream, this, _1, _2));
+        }
+
+        m_rtc_signaling->generate_offers(count, std::move(handler));
+    }
+
+    void torrent::on_rtc_offer(aux::rtc_offer const& offer)
+    {
+        TORRENT_ASSERT(m_rtc_signaling);
+        if(m_rtc_signaling) m_rtc_signaling->process_offer(offer);
+    }
+
+    void torrent::on_rtc_answer(aux::rtc_answer const& answer)
+    {
+        TORRENT_ASSERT(m_rtc_signaling);
+        if(m_rtc_signaling) m_rtc_signaling->process_answer(answer);
+    }
+
+    void torrent::on_rtc_stream(peer_id const& pid, aux::rtc_stream_init stream_init) {
+        aux::socket_type s(aux::rtc_stream(m_ses.get_context(), stream_init));
+
+        need_peer_list();
+        torrent_state st = get_peer_list_state();
+        torrent_peer *peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_source_flags_t{}, {}, &st);
+
+        error_code ec;
+        auto endpoint = s.remote_endpoint(ec);
+        TORRENT_ASSERT(!ec);
+        if (ec) return;
+
+        create_peer_connection(peerinfo, std::move(s), std::move(endpoint));
+    }
+#endif
 
 	void torrent::remove_connection(peer_connection const* p)
 	{
@@ -7294,20 +7355,28 @@ namespace {
 
 		peerinfo->last_connected = m_ses.session_time();
 #if TORRENT_USE_ASSERTS
-		if (!settings().get_bool(settings_pack::allow_multiple_connections_per_ip))
+        if (!settings().get_bool(settings_pack::allow_multiple_connections_per_ip)
+            #if TORRENT_USE_I2P
+            && !peerinfo->is_i2p_addr
+            #endif
+            #if TORRENT_USE_RTC
+            && !peerinfo->is_rtc_addr
+#endif
+                )
 		{
 			// this asserts that we don't have duplicates in the peer_list's peer list
 			peer_iterator i_ = std::find_if(m_connections.begin(), m_connections.end()
 				, [peerinfo] (peer_connection const* p)
-				{ return !p->is_disconnecting() && p->remote() == peerinfo->ip(); });
-#if TORRENT_USE_I2P
-			TORRENT_ASSERT(i_ == m_connections.end()
-				|| (*i_)->type() != connection_type::bittorrent
-				|| peerinfo->is_i2p_addr);
-#else
-			TORRENT_ASSERT(i_ == m_connections.end()
-				|| (*i_)->type() != connection_type::bittorrent);
+                {
+                    return !p->is_disconnecting() && p->remote() == peerinfo->ip()
+#if TORRENT_USE_RTC
+                            && p->peer_info_struct() && !p->peer_info_struct()->is_rtc_addr
 #endif
+                        ;
+                });
+
+            TORRENT_ASSERT(i_ == m_connections.end()
+                           || (*i_)->type() != connection_type::bittorrent);
 		}
 #endif // TORRENT_USE_ASSERTS
 
@@ -7338,6 +7407,16 @@ namespace {
 			}
 		}
 		else
+#endif
+
+#if TORRENT_USE_RTC
+        if (peerinfo->is_rtc_addr)
+        {
+            // unsollicited connection is not possible
+            TORRENT_ASSERT_FAIL();
+            return false;
+        }
+        else
 #endif
 		{
 			if (settings().get_bool(settings_pack::enable_outgoing_utp)
@@ -7412,6 +7491,15 @@ namespace {
 		}
 		}();
 
+        if(!create_peer_connection(peerinfo, std::move(s), std::move(a)))
+            return false;
+
+        return peerinfo->connection != nullptr;
+    }
+
+    bool torrent::create_peer_connection(torrent_peer* peerinfo, aux::socket_type socket, tcp::endpoint endpoint)
+    {
+
 		peer_id const our_pid = aux::generate_peer_id(settings());
 		peer_connection_args pack{
 			&m_ses
@@ -7420,8 +7508,8 @@ namespace {
 			, &m_ses.disk_thread()
 			, &m_ses.get_context()
 			, shared_from_this()
-			, std::move(s)
-			, a
+            , std::move(socket)
+            , std::move(endpoint)
 			, peerinfo
 			, our_pid
 		};
@@ -7484,7 +7572,7 @@ namespace {
 			recalc_share_mode();
 #endif
 
-		return peerinfo->connection != nullptr;
+        return true;
 	}
 
 	error_code torrent::initialize_merkle_trees()

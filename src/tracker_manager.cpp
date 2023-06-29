@@ -35,15 +35,19 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <cctype>
 
-#include "libtorrent/tracker_manager.hpp"
-#include "libtorrent/http_tracker_connection.hpp"
-#include "libtorrent/udp_tracker_connection.hpp"
 #include "libtorrent/aux_/io.hpp"
 #include "libtorrent/aux_/session_interface.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
+#include "libtorrent/http_tracker_connection.hpp"
 #include "libtorrent/performance_counters.hpp"
 #include "libtorrent/socket_io.hpp"
 #include "libtorrent/ssl.hpp"
+#include "libtorrent/tracker_manager.hpp"
+#include "libtorrent/udp_tracker_connection.hpp"
+
+#if TORRENT_USE_RTC
+#include "libtorrent/aux_/websocket_tracker_connection.hpp"
+#endif
 
 using namespace std::placeholders;
 
@@ -261,6 +265,15 @@ constexpr tracker_request_flags_t tracker_request::i2p;
 		m_udp_conns.erase(c->transaction_id());
 	}
 
+#if TORRENT_USE_RTC
+    void tracker_manager::remove_request(aux::websocket_tracker_connection const* c)
+    {
+        TORRENT_ASSERT(is_single_thread());
+        tracker_request const& req = c->tracker_req();
+        m_websocket_conns.erase(req.url);
+    }
+#endif
+
 	void tracker_manager::update_transaction_id(
 		std::shared_ptr<udp_tracker_connection> c
 		, std::uint32_t tid)
@@ -282,9 +295,8 @@ constexpr tracker_request_flags_t tracker_request::i2p;
 		if (m_abort && req.event != event_t::stopped) return;
 
 #ifndef TORRENT_DISABLE_LOGGING
-		std::shared_ptr<request_callback> cb = c.lock();
-		if (cb) cb->debug_log("*** QUEUE_TRACKER_REQUEST [ listen_port: %d ]"
-			, req.listen_port);
+        if(auto cb = c.lock())
+            cb->debug_log("*** QUEUE_TRACKER_REQUEST [ listen_port: %d ]", req.listen_port);
 #endif
 
 		std::string const protocol = req.url.substr(0, req.url.find(':'));
@@ -314,10 +326,37 @@ constexpr tracker_request_flags_t tracker_request::i2p;
 			m_udp_conns[con->transaction_id()] = con;
 			con->start();
 			return;
-		}
+        }
+#if TORRENT_USE_RTC
+        else if (protocol == "ws" || protocol == "wss")
+        {
+            std::shared_ptr<request_callback> cb = c.lock();
+            if(!cb) return;
 
-		// we need to post the error to avoid deadlock
-		if (auto r = c.lock())
+            // TODO: introduce a setting for max_offers
+            const int max_offers = 10;
+            req.num_want = std::min(req.num_want, max_offers);
+            cb->generate_rtc_offers(req.num_want
+                    , [this, &ios, req = std::move(req), c](error_code const& ec
+                            , std::vector<aux::rtc_offer> offers) mutable
+                                    {
+                                        if(!ec) req.offers = std::move(offers);
+
+                                        auto it = m_websocket_conns.find(req.url);
+                                        if (it != m_websocket_conns.end() && it->second->is_started()) {
+                                            it->second->queue_request(std::move(req), c);
+                                        } else {
+                                            auto con = std::make_shared<aux::websocket_tracker_connection>(
+                                                    ios, *this, std::move(req), c);
+                                            con->start();
+                                            m_websocket_conns[req.url] = con;
+                                        }
+                                    });
+            return;
+        }
+#endif
+
+        else if (auto r = c.lock())
 			post(ios, std::bind(&request_callback::tracker_request_error, r, std::move(req)
 				, errors::unsupported_url_protocol, operation_t::parse_address
 				, "", seconds32(0)));
@@ -480,22 +519,49 @@ constexpr tracker_request_flags_t tracker_request::i2p;
 #endif
 		}
 
+#if TORRENT_USE_RTC
+        std::vector<std::shared_ptr<aux::websocket_tracker_connection>> close_websocket_connections;
+        for (auto const& p : m_websocket_conns)
+        {
+            auto const& c = p.second;
+            close_websocket_connections.push_back(c);
+
+#ifndef TORRENT_DISABLE_LOGGING
+            std::shared_ptr<request_callback> rc = c->requester();
+            if (rc) rc->debug_log("aborting: %s", c->tracker_req().url.c_str());
+#endif
+        }
+#endif
+
 		for (auto const& c : close_http_connections)
 			c->close();
 
 		for (auto const& c : close_udp_connections)
 			c->close();
+
+#if TORRENT_USE_RTC
+        for (auto const& c : close_websocket_connections)
+            c->close();
+#endif
 	}
 
 	bool tracker_manager::empty() const
 	{
 		TORRENT_ASSERT(is_single_thread());
-		return m_http_conns.empty() && m_udp_conns.empty();
+        return m_http_conns.empty() && m_udp_conns.empty()
+#if TORRENT_USE_RTC
+               && m_websocket_conns.empty()
+#endif
+                ;
 	}
 
 	int tracker_manager::num_requests() const
 	{
 		TORRENT_ASSERT(is_single_thread());
-		return int(m_http_conns.size() + m_udp_conns.size());
+        return int(m_http_conns.size() + m_udp_conns.size()
+#if TORRENT_USE_RTC
+                   + m_websocket_conns.empty()
+#endif
+        );
 	}
 }

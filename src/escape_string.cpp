@@ -50,7 +50,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/assert.hpp"
 #include "libtorrent/parse_url.hpp"
 
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/aux_/escape_string.hpp"
 #include "libtorrent/string_util.hpp" // for to_string
 #include "libtorrent/aux_/array.hpp"
@@ -532,7 +532,7 @@ namespace {
 			int len;
 
 			// decode a single utf-8 character
-			std::tie(codepoint, len) = parse_utf8_codepoint(ptr);
+			std::tie(codepoint, len) = aux::parse_utf8_codepoint(ptr);
 
 			if (codepoint == -1)
 				codepoint = '.';
@@ -572,7 +572,7 @@ namespace {
 			}
 			else
 			{
-				append_utf8_codepoint(ret, static_cast<std::int32_t>(codepoint));
+				aux::append_utf8_codepoint(ret, static_cast<std::int32_t>(codepoint));
 				ptr = ptr.substr(size < 1 ? 1 : size);
 			}
 		}

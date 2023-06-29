@@ -142,10 +142,14 @@ namespace libtorrent {
 		// than we requested.
 #if TORRENT_USE_ASSERTS
 		error_code ec;
-		TORRENT_ASSERT(c.remote() == c.get_socket().remote_endpoint(ec) || ec);
+#if TORRENT_USE_RTC
+        TORRENT_ASSERT(c.remote() == c.get_socket().remote_endpoint(ec) || ec || is_rtc(c.get_socket()));
+#else
+        TORRENT_ASSERT(c.remote() == c.get_socket().remote_endpoint(ec) || ec);
+#endif
 #endif
 
-		aux::session_interface& ses = t.session();
+        aux::session_interface& ses = t.session();
 
 		std::vector<pending_block> const& dq = c.download_queue();
 		std::vector<pending_block> const& rq = c.request_queue();

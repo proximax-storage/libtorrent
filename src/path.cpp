@@ -84,7 +84,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifdef TORRENT_WINDOWS
 // windows part
 
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/aux_/win_util.hpp"
 
 #include "libtorrent/aux_/windows.hpp"

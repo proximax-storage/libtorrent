@@ -85,7 +85,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/kademlia/node_entry.hpp"
 #endif
 #include "libtorrent/enum_net.hpp"
-#include "libtorrent/utf8.hpp"
+#include "libtorrent/aux_/utf8.hpp"
 #include "libtorrent/upnp.hpp"
 #include "libtorrent/natpmp.hpp"
 #include "libtorrent/lsd.hpp"
@@ -1344,12 +1344,13 @@ namespace {
 
 		using sock_t = peer_class_type_filter::socket_type_t;
 		// assign peer class based on socket type
-		static aux::array<sock_t, 9, socket_type_t> const mapping{{{
+        static aux::array<sock_t, 10, socket_type_t> const mapping{{{
 			sock_t::tcp_socket
 			, sock_t::tcp_socket
 			, sock_t::tcp_socket
 			, sock_t::utp_socket
 			, sock_t::i2p_socket
+            , sock_t::rtc_socket
 			, sock_t::ssl_tcp_socket
 			, sock_t::ssl_tcp_socket
 			, sock_t::ssl_tcp_socket

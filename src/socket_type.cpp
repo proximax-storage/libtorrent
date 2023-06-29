@@ -33,6 +33,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include <variant>
+
 #include "libtorrent/config.hpp"
 #include "libtorrent/aux_/socket_type.hpp"
 #include "libtorrent/aux_/array.hpp"
@@ -44,7 +46,7 @@ namespace libtorrent {
 
 	char const* socket_type_name(socket_type_t const s)
 	{
-		static aux::array<char const*, 9, socket_type_t> const names{{{
+        static aux::array<char const*, 10, socket_type_t> const names{{{
 			"TCP",
 			"Socks5",
 			"HTTP",
@@ -53,6 +55,11 @@ namespace libtorrent {
 			"I2P",
 #else
 			"",
+#endif
+#if TORRENT_USE_RTC
+            "RTC",
+#else
+            "",
 #endif
 #if TORRENT_USE_SSL
 			"SSL/TCP",
@@ -98,6 +105,13 @@ namespace aux {
 	}
 #endif
 
+#if TORRENT_USE_RTC
+    bool is_rtc(socket_type const& s)
+    {
+        return boost::get<rtc_stream>(&s);
+    }
+#endif
+
 	struct idx_visitor {
 		socket_type_t operator()(tcp::socket const&) { return socket_type_t::tcp; }
 		socket_type_t operator()(socks5_stream const&) { return socket_type_t::socks5; }
@@ -105,6 +119,9 @@ namespace aux {
 		socket_type_t operator()(utp_stream const&) { return socket_type_t::utp; }
 #if TORRENT_USE_I2P
 		socket_type_t operator()(i2p_stream const&) { return socket_type_t::i2p; }
+#endif
+#if TORRENT_USE_RTC
+        socket_type_t operator()(rtc_stream const&) { return socket_type_t::rtc; }
 #endif
 #if TORRENT_USE_SSL
 		socket_type_t operator()(ssl_stream<tcp::socket> const&) { return socket_type_t::tcp_ssl; }

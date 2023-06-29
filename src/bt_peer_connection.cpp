@@ -235,6 +235,12 @@ namespace {
 		if (is_ssl(get_socket()))
 			out_policy = settings_pack::pe_disabled;
 #endif
+#if TORRENT_USE_RTC
+        // never try an encrypted connection over WebRTC (which is already encrypted)
+        if (torrent_peer *pi = peer_info_struct())
+            if (pi->is_rtc_addr)
+                out_policy = settings_pack::pe_disabled;
+#endif
 #ifndef TORRENT_DISABLE_LOGGING
 		static char const* policy_name[] = {"forced", "enabled", "disabled"};
 		TORRENT_ASSERT(out_policy < sizeof(policy_name)/sizeof(policy_name[0]));
@@ -4134,6 +4140,15 @@ namespace {
                     maybe_unchoke_this_peer();
 #endif
 				}
+
+#if TORRENT_USE_RTC
+                // WebTorrent JavaScript implementation might not send interested message at connection
+                if(pid[0] == '-' && pid[1] == 'W' && (pid[2] == 'W' || pid[2] == 'D'))
+                {
+                    // This is WebTorrent or WebTorrent Desktop, simulate INTERESTED message
+                    incoming_interested();
+                }
+#endif
 			}
 
 			m_state = state_t::read_packet_size;
