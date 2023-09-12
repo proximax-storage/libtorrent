@@ -669,6 +669,7 @@ if (ANDROID)
 endif()
 
 if (APPLE)
+    add_definitions(-DBOOST_ASIO_HAS_STD_INVOKE_RESULT)
     set(CMAKE_VERBOSE_MAKEFILE ON)
 	set(BOOST_INCLUDE_DIR "/usr/local/include")
 	set(BOOST_LIB_DIR "/usr/local/lib")
