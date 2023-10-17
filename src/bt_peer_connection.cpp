@@ -2317,8 +2317,8 @@ namespace {
             {
                 std::cerr << "+++ rd-EXT-handshake-and-verify-it FAILED!!!: " << is_outgoing()
                 << " peer connection established: " << delegate->dbgOurPeerName()
-                << " from: "  << (int)m_other_peer_key[0]
-                << " hash: "  << (int)m_other_peer_hash[0]
+                << " from: "  << toString(m_other_peer_key)
+                << " hash: "  << toString(m_other_peer_hash)
                 << " flags: " << torrent->m_siriusFlags
                 << std::endl << std::flush;
 
@@ -2326,17 +2326,10 @@ namespace {
             }
             else
             {
-                auto port = root.dict_find_int_value("port");
-
-                if (port > 0) {
-                    delegate->onEndpointDiscovered(m_other_peer_key, std::make_optional<boost::asio::ip::tcp::endpoint>(m_remote.address(), port));
+                if (m_remote.port() > 0 && (peer_connection::pid() != m_our_peer_id)) {
+                    std::cout << "bt_peer_connection::on_extended_handshake: key: " << toString(m_other_peer_key) << " endpoint: " << m_remote.address().to_string() << " : " << m_remote.port() << std::endl;
+                    delegate->onEndpointDiscovered(m_other_peer_key, std::make_optional<boost::asio::ip::tcp::endpoint>(m_remote.address(), m_remote.port()));
                 }
-//                std::cerr << "+++ rd-EXT-handshake-and-verify-it ACCEPTED: " << is_outgoing()
-//                << " peer connection established: " << delegate->dbgOurPeerName()
-//                << " from: "  << (int)m_other_peer_key[0]
-//                << " hash: "  << (int)m_other_peer_hash[0]
-//                << " flags: " << torrent->m_siriusFlags
-//                << std::endl << std::flush;
             }
             
             if ( torrent && (torrent->m_siriusFlags & SiriusFlags::client_is_receiver) )
@@ -3961,9 +3954,9 @@ namespace {
                                   << delegate->dbgOurPeerName()
                                   << " "
                                   << "key "
-                                  << (int) m_other_peer_key[0]
+                                  << toString(m_other_peer_key)
                                   << "driveKey "
-                                  << (int) torrent->m_driveKey.get()->at(0)
+                                  << toString(*torrent->m_driveKey)
                                   << " "
                                   << m_remote.address().to_string()
                                   << " "
