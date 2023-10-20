@@ -191,7 +191,7 @@ udp_socket::udp_socket(io_context& ios, aux::listen_socket_handle ls)
 	, m_abort(true)
 {}
 
-int udp_socket::read(span<packet> pkts, error_code& ec)
+int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::string message, int code)> alertsCallback)
 {
 	auto const num = int(pkts.size());
 	int ret = 0;
@@ -202,21 +202,36 @@ int udp_socket::read(span<packet> pkts, error_code& ec)
 		int const len = int(m_socket.receive_from(boost::asio::buffer(*m_buf)
 			, p.from, 0, ec));
 
+		printf(" +++socket received from: %s : %s \n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str());
+
+        std::string message;
+        message.append(" sirius alert: udp_socket::read: ");
+        message.append(std::string(m_buf->begin(), m_buf->end()));
+        message.append(" source address: ");
+        message.append(p.from.address().to_string());
+        message.append(" : ");
+        message.append(std::to_string(p.from.port()));
+        alertsCallback(ec.message(), ec.value());
+
 		if (ec == error::would_block
 			|| ec == error::try_again
 			|| ec == error::operation_aborted
 			|| ec == error::bad_descriptor)
 		{
+            alertsCallback(ec.message(), ec.value());
 			return ret;
 		}
 
 		if (ec == error::interrupted)
 		{
+            alertsCallback(ec.message(), ec.value());
 			continue;
 		}
 
 		if (ec)
 		{
+            alertsCallback(ec.message(), ec.value());
+
 			// SOCKS5 cannot wrap ICMP errors. And even if it could, they certainly
 			// would not arrive as unwrapped (regular) ICMP errors. If we're using
 			// a proxy we must ignore these
