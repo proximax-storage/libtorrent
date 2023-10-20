@@ -2534,12 +2534,30 @@ namespace {
 		{
 			aux::array<udp_socket::packet, 50> p;
 			error_code err;
-			int const num_packets = s->sock.read(p, err);
+
+            auto callback = [this](std::string message, int code)
+            {
+                std::string log;
+                log.append(" sirius alert: ");
+                log.append(message);
+                log.append(" code: ");
+                log.append(std::to_string(code));
+                m_alerts.emplace_alert<log_alert>(message.c_str());
+            };
+
+			int const num_packets = s->sock.read(p, err, callback);
 
 			for (udp_socket::packet& packet : span<udp_socket::packet>(p).first(num_packets))
 			{
 				if (packet.error)
 				{
+                    std::string message;
+                    message.append(" sirius alert: udp packet error ");
+                    message.append(packet.from.address().to_string());
+                    message.append(" : ");
+                    message.append(std::to_string(packet.from.port()));
+                    m_alerts.emplace_alert<log_alert>(message.c_str());
+
 					// TODO: 3 it would be neat if the utp socket manager would
 					// handle ICMP errors too
 

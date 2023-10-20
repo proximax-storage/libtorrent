@@ -91,7 +91,7 @@ namespace aux { struct alert_manager; }
 			error_code error;
 		};
 
-		int read(span<packet> pkts, error_code& ec);
+		int read(span<packet> pkts, error_code& ec, std::function<void(std::string message, int code)> alertsCallback);
 
 		// this is only valid when using a socks5 proxy
 		void send_hostname(char const* hostname, int port, span<char const> p
