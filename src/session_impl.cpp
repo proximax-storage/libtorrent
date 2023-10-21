@@ -2549,8 +2549,10 @@ namespace {
 
 			for (udp_socket::packet& packet : span<udp_socket::packet>(p).first(num_packets))
 			{
+                printf(" +++socket on_udp_packet: %s : %s --5--\n", packet.from.address().to_string().c_str(), std::to_string(packet.from.port()).c_str() );
 				if (packet.error)
 				{
+                    printf(" +++socket on_udp_packet: %s : %s --6--\n", packet.from.address().to_string().c_str(), std::to_string(packet.from.port()).c_str() );
                     std::string message;
                     message.append(" sirius alert: udp packet error ");
                     message.append(packet.from.address().to_string());
@@ -2569,6 +2571,7 @@ namespace {
 					m_tracker_manager.incoming_error(packet.error, packet.from);
 					continue;
 				}
+                printf(" +++socket on_udp_packet: %s : %s --7--\n", packet.from.address().to_string().c_str(), std::to_string(packet.from.port()).c_str() );
 
 				span<char const> const buf = packet.data;
 
@@ -2576,6 +2579,7 @@ namespace {
 				// the majority of packets are uTP packets.
 				if (!mgr.incoming_packet(ls, packet.from, buf))
 				{
+                    printf(" +++socket on_udp_packet: %s : %s --8--\n", packet.from.address().to_string().c_str(), std::to_string(packet.from.port()).c_str() );
 					// if it wasn't a uTP packet, try the other users of the UDP
 					// socket
 					bool handled = false;
@@ -2586,6 +2590,7 @@ namespace {
 						&& buf.back() == 'e'
 						&& listen_socket)
 					{
+                        printf(" +++socket on_udp_packet: %s : %s --9--\n", packet.from.address().to_string().c_str(), std::to_string(packet.from.port()).c_str() );
 						handled = m_dht->incoming_packet(listen_socket, packet.from, buf);
 					}
 #endif
@@ -2601,12 +2606,14 @@ namespace {
 
 			if (err == error::would_block || err == error::try_again)
 			{
+                printf(" +++socket on_udp_packet: %s --19--\n", ec.message().c_str() );
 				// there are no more packets on the socket
 				break;
 			}
 
 			if (err)
 			{
+                printf(" +++socket on_udp_packet: %s --18--\n", ec.message().c_str() );
 				udp::endpoint const ep = s->local_endpoint();
 
 				if (err != boost::asio::error::operation_aborted

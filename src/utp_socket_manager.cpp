@@ -138,6 +138,7 @@ namespace aux {
 	bool utp_socket_manager::incoming_packet(std::weak_ptr<utp_socket_interface> socket
 		, udp::endpoint const& ep, span<char const> p)
 	{
+        printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --0--\n", ep.address().to_string().c_str(), ep.port() );
 //		UTP_LOGV("incoming packet size:%d\n", size);
 
 		if (p.size() < std::ptrdiff_t(sizeof(utp_header))) return false;
@@ -158,6 +159,7 @@ namespace aux {
 		// in most cases it is
 		if (m_last_socket && m_last_socket->match(ep, id))
 		{
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --1--\n", ep.address().to_string().c_str(), ep.port() );
 			return m_last_socket->incoming_packet(p, ep, receive_time);
 		}
 
@@ -171,6 +173,7 @@ namespace aux {
 
 		for (; r.first != r.second; ++r.first)
 		{
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --2--\n", ep.address().to_string().c_str(), ep.port() );
 			if (!r.first->second->match(ep, id)) continue;
 			bool const ret = r.first->second->incoming_packet(p, ep, receive_time);
 			if (ret) m_last_socket = r.first->second.get();
@@ -180,15 +183,23 @@ namespace aux {
 //		UTP_LOGV("incoming packet id:%d source:%s\n", id, print_endpoint(ep).c_str());
 
 		if (!m_sett.get_bool(settings_pack::enable_incoming_utp))
-			return false;
+        {
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --3--\n", ep.address().to_string().c_str(), ep.port() );
+            return false;
+        }
 
 		// if not found, see if it's a SYN packet, if it is,
 		// create a new utp_stream
 		if (ph->get_type() == ST_SYN)
 		{
-			// possible SYN flood. Just ignore
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --4--\n", ep.address().to_string().c_str(), ep.port() );
+
+            // possible SYN flood. Just ignore
 			if (int(m_utp_sockets.size()) > m_sett.get_int(settings_pack::connections_limit) * 2)
-				return false;
+            {
+                printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --5--\n", ep.address().to_string().c_str(), ep.port() );
+                return false;
+            }
 
 			TORRENT_ASSERT(m_new_connection == -1);
 			// create the new socket with this ID
@@ -212,18 +223,28 @@ namespace aux {
 			str->get_impl()->init_mtu(mtu);
 			str->get_impl()->m_sock = std::move(socket);
 			bool const ret = str->get_impl()->incoming_packet(p, ep, receive_time);
-			if (!ret) return false;
+			if (!ret)
+            {
+                printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --6--\n", ep.address().to_string().c_str(), ep.port() );
+                return false;
+            }
 			m_last_socket = str->get_impl();
 			m_cb(std::move(c));
 			// the connection most likely changed its connection ID here
 			// we need to move it to the correct ID
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --7--\n", ep.address().to_string().c_str(), ep.port() );
 			return true;
 		}
 
-		if (ph->get_type() == ST_RESET) return false;
+		if (ph->get_type() == ST_RESET)
+        {
+            printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --8--\n", ep.address().to_string().c_str(), ep.port() );
+            return false;
+        }
 
 		// #error send reset
 
+        printf(" +++socket utp_socket_manager::incoming_packet: %s : %i --9--\n", ep.address().to_string().c_str(), ep.port() );
 		return false;
 	}
 

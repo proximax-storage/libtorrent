@@ -2250,7 +2250,9 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 	INVARIANT_CHECK;
 	span<std::uint8_t const> const buf(reinterpret_cast<std::uint8_t const*>(b.data()), b.size());
 
-	auto const* ph = reinterpret_cast<utp_header const*>(buf.data());
+    printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --0--\n", ep.address().to_string().c_str(), ep.port() );
+
+    auto const* ph = reinterpret_cast<utp_header const*>(buf.data());
 	m_sm.inc_stats_counter(counters::utp_packets_in);
 
 	if (buf.size() < int(sizeof(utp_header)))
@@ -2258,6 +2260,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet size too small:%d (ignored)\n"
 			, static_cast<void*>(this), int(buf.size()));
 		m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --1--\n", ep.address().to_string().c_str(), ep.port() );
 		return false;
 	}
 
@@ -2266,6 +2269,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet version:%d (ignored)\n"
 			, static_cast<void*>(this), int(ph->get_version()));
 		m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --2--\n", ep.address().to_string().c_str(), ep.port() );
 		return false;
 	}
 
@@ -2275,6 +2279,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet id:%d expected:%d (ignored)\n"
 			, static_cast<void*>(this), int(ph->connection_id), int(m_recv_id));
 		m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --3--\n", ep.address().to_string().c_str(), ep.port() );
 		return false;
 	}
 
@@ -2283,6 +2288,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet type:%d (ignored)\n"
 			, static_cast<void*>(this), int(ph->get_type()));
 		m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --4--\n", ep.address().to_string().c_str(), ep.port() );
 		return false;
 	}
 
@@ -2297,6 +2303,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet type:ST_SYN (ignored)\n"
 			, static_cast<void*>(this));
 		m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --5--\n", ep.address().to_string().c_str(), ep.port() );
 		return true;
 	}
 
@@ -2358,6 +2365,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			"acked_seq_nr:%d (ignored)\n"
 			, static_cast<void*>(this), int(ph->ack_nr), m_seq_nr, m_acked_seq_nr);
 		m_sm.inc_stats_counter(counters::utp_redundant_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --6--\n", ep.address().to_string().c_str(), ep.port() );
 		return true;
 	}
 
@@ -2394,6 +2402,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet type: %s seq_nr:%d eof_seq_nr:%d (ignored)\n"
 			, static_cast<void*>(this), packet_type_names[ph->get_type()], int(ph->seq_nr), m_eof_seq_nr);
 #endif
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --7--\n", ep.address().to_string().c_str(), ep.port() );
 		return true;
 	}
 
@@ -2416,6 +2425,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		UTP_LOG("%8p: ERROR: incoming packet seq_nr:%d our ack_nr:%d (ignored)\n"
 			, static_cast<void*>(this), int(ph->seq_nr), m_ack_nr);
 		m_sm.inc_stats_counter(counters::utp_redundant_pkts_in);
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --8--\n", ep.address().to_string().c_str(), ep.port() );
 		return true;
 	}
 
@@ -2425,12 +2435,14 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		{
 			UTP_LOG("%8p: ERROR: invalid RESET packet, ack_nr:%d our seq_nr:%d (ignored)\n"
 				, static_cast<void*>(this), int(ph->ack_nr), m_seq_nr);
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --123--\n", ep.address().to_string().c_str(), ep.port() );
 			return true;
 		}
 		UTP_LOGV("%8p: incoming packet type:RESET\n", static_cast<void*>(this));
 		m_error = boost::asio::error::connection_reset;
 		set_state(state_t::error_wait);
 		test_socket_state();
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --9--\n", ep.address().to_string().c_str(), ep.port() );
 		return true;
 	}
 
@@ -2524,6 +2536,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 		{
 			UTP_LOG("%8p: ERROR: invalid extension header\n", static_cast<void*>(this));
 			m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --122--\n", ep.address().to_string().c_str(), ep.port() );
 			return true;
 		}
 		std::uint8_t const next_extension = *ptr++;
@@ -2533,6 +2546,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			UTP_LOG("%8p: ERROR: invalid extension header size:%d packet:%d\n"
 				, static_cast<void*>(this), len, int(ptr - buf.data()));
 			m_sm.inc_stats_counter(counters::utp_invalid_pkts_in);
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --9--\n", ep.address().to_string().c_str(), ep.port() );
 			return true;
 		}
 		switch(extension)
@@ -2554,7 +2568,11 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 
 	// the send operation in parse_sack() may have set the socket to an error
 	// state, in which case we shouldn't continue
-	if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+	if (state() == state_t::error_wait || state() == state_t::deleting)
+    {
+        printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --121--\n", ep.address().to_string().c_str(), ep.port() );
+        return true;
+    }
 
 	if (m_duplicate_acks >= dup_ack_limit
 		&& ((m_acked_seq_nr + 1) & ACK_MASK) == m_fast_resend_seq_nr)
@@ -2577,7 +2595,9 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			// signal congestion
 			if (!p->mtu_probe) experienced_loss(m_fast_resend_seq_nr, receive_time);
 			resend_packet(p, true);
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --119--\n", ep.address().to_string().c_str(), ep.port() );
 			if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --120--\n", ep.address().to_string().c_str(), ep.port() );
 		}
 	}
 
@@ -2616,18 +2636,23 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			if (state() == state_t::fin_sent)
 			{
 				send_pkt(pkt_ack);
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --117--\n", ep.address().to_string().c_str(), ep.port() );
 				if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --118--\n", ep.address().to_string().c_str(), ep.port() );
 			}
 			else
 			{
 				send_fin();
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --115--\n", ep.address().to_string().c_str(), ep.port() );
 				if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --116--\n", ep.address().to_string().c_str(), ep.port() );
 			}
 		}
 
 		if (m_eof)
 		{
 			UTP_LOGV("%8p: duplicate FIN packet (ignoring)\n", static_cast<void*>(this));
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --114--\n", ep.address().to_string().c_str(), ep.port() );
 			return true;
 		}
 		m_eof = true;
@@ -2665,6 +2690,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 					UTP_LOGV("%8p: received invalid connection_id:%d expected: %d\n"
 						, static_cast<void*>(this), int(ph->connection_id), int(m_send_id));
 #endif
+                    printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --10--\n", ep.address().to_string().c_str(), ep.port() );
 					return false;
 				}
 				TORRENT_ASSERT(m_recv_id == ((m_send_id + 1) & 0xffff));
@@ -2771,7 +2797,9 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			// of this round. Subscribe to that event
 			subscribe_drained();
 
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --110--\n", ep.address().to_string().c_str(), ep.port() );
 			if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+            printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --111--\n", ep.address().to_string().c_str(), ep.port() );
 
 			// Everything up to the FIN has been received, respond with a FIN
 			// from our side.
@@ -2781,7 +2809,9 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 
 				// This transitions to the state_t::fin_sent state.
 				send_fin();
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --112--\n", ep.address().to_string().c_str(), ep.port() );
 				if (state() == state_t::error_wait || state() == state_t::deleting) return true;
+                printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --113--\n", ep.address().to_string().c_str(), ep.port() );
 			}
 
 			TORRENT_ASSERT(!compare_less_wrap(m_seq_nr, m_acked_seq_nr, ACK_MASK));
@@ -2972,6 +3002,7 @@ bool utp_socket_impl::incoming_packet(span<char const> b
 			break;
 		}
 	}
+    printf(" +++socket utp_socket_impl::incoming_packet: %s : %i --11--\n", ep.address().to_string().c_str(), ep.port() );
 	return true;
 }
 

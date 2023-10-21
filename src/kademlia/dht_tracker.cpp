@@ -510,7 +510,9 @@ namespace libtorrent { namespace dht {
 	bool dht_tracker::incoming_packet(aux::listen_socket_handle const& s
 		, udp::endpoint const& ep, span<char const> const buf)
 	{
-		int const buf_size = int(buf.size());
+        printf(" +++socket dht_tracker::incoming_packet: %s : %i --0--\n", ep.address().to_string().c_str(), ep.port() );
+
+        int const buf_size = int(buf.size());
 		if (buf_size <= 20
 			|| buf.front() != 'd'
 			|| buf.back() != 'e') return false;
@@ -532,11 +534,13 @@ namespace libtorrent { namespace dht {
 
 			if (std::find(std::begin(class_a), std::end(class_a), b[0]) != std::end(class_a))
 			{
+                printf(" +++socket dht_tracker::incoming_packet: %s : %i --1--\n", ep.address().to_string().c_str(), ep.port() );
 				m_counters.inc_stats_counter(counters::dht_messages_in_dropped);
 				return true;
 			}
 		}
 
+        printf(" +++socket dht_tracker::incoming_packet: %s : %i --2--\n", ep.address().to_string().c_str(), ep.port() );
 #ifndef SIRIUS_DRIVE_MULTI
         if (!m_blocker.incoming(ep.address(), clock_type::now(), m_log))
 		{
@@ -544,7 +548,8 @@ namespace libtorrent { namespace dht {
 			return true;
 		}
 #endif
-        
+        printf(" +++socket dht_tracker::incoming_packet: %s : %i --3--\n", ep.address().to_string().c_str(), ep.port() );
+
 		TORRENT_ASSERT(buf_size > 0);
 
 		int pos;
@@ -552,6 +557,7 @@ namespace libtorrent { namespace dht {
 		int const ret = bdecode(buf.data(), buf.data() + buf_size, m_msg, err, &pos, 10, 500);
 		if (ret != 0)
 		{
+            printf(" +++socket dht_tracker::incoming_packet: %s : %i --4--\n", ep.address().to_string().c_str(), ep.port() );
 			m_counters.inc_stats_counter(counters::dht_messages_in_dropped);
 #ifndef TORRENT_DISABLE_LOGGING
 			m_log->log_packet(dht_logger::incoming_message, buf, ep);
@@ -561,6 +567,7 @@ namespace libtorrent { namespace dht {
 
 		if (m_msg.type() != bdecode_node::dict_t)
 		{
+            printf(" +++socket dht_tracker::incoming_packet: %s : %i --5--\n", ep.address().to_string().c_str(), ep.port() );
 			m_counters.inc_stats_counter(counters::dht_messages_in_dropped);
 #ifndef TORRENT_DISABLE_LOGGING
 			m_log->log_packet(dht_logger::incoming_message, buf, ep);
@@ -568,6 +575,7 @@ namespace libtorrent { namespace dht {
 			// it's not a good idea to send a response to an invalid messages
 			return false;
 		}
+        printf(" +++socket dht_tracker::incoming_packet: %s : %i --6--\n", ep.address().to_string().c_str(), ep.port() );
 
 #ifndef TORRENT_DISABLE_LOGGING
 		m_log->log_packet(dht_logger::incoming_message, buf, ep);

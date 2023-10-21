@@ -202,7 +202,7 @@ int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::
 		int const len = int(m_socket.receive_from(boost::asio::buffer(*m_buf)
 			, p.from, 0, ec));
 
-		printf(" +++socket received from: %s : %s \n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str());
+		printf(" +++socket received from: %s : %s (%s)\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str(), ec.message().c_str() );
 
         std::string message;
         message.append(" sirius alert: udp_socket::read: ");
@@ -218,18 +218,21 @@ int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::
 			|| ec == error::operation_aborted
 			|| ec == error::bad_descriptor)
 		{
+            printf(" +++socket udp_socket::read: %s : %s --1--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
             alertsCallback(ec.message(), ec.value());
 			return ret;
 		}
 
 		if (ec == error::interrupted)
 		{
+            printf(" +++socket udp_socket::read: %s : %s --2--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
             alertsCallback(ec.message(), ec.value());
 			continue;
 		}
 
 		if (ec)
 		{
+            printf(" +++socket udp_socket::read: %s : %s --3--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
             alertsCallback(ec.message(), ec.value());
 
 			// SOCKS5 cannot wrap ICMP errors. And even if it could, they certainly
@@ -242,11 +245,13 @@ int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::
 		}
 		else
 		{
+            printf(" +++socket udp_socket::read: %s : %s --4--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
 			p.data = {m_buf->data(), len};
 
 			// support packets coming from the SOCKS5 proxy
 			if (active_socks5())
 			{
+                printf(" +++socket udp_socket::read: %s : %s --5--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
 				// if the source IP doesn't match the proxy's, ignore the packet
 				if (p.from != m_socks5_connection->target()) continue;
 				// if we failed to unwrap, silently ignore the packet
@@ -254,6 +259,7 @@ int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::
 			}
 			else
 			{
+                printf(" +++socket udp_socket::read: %s : %s --6--\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str() );
 				// if we don't proxy trackers or peers, we may be receiving unwrapped
 				// packets and we must let them through.
 				bool const proxy_only
