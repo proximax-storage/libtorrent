@@ -202,7 +202,7 @@ int udp_socket::read(span<packet> pkts, error_code& ec, std::function<void(std::
 		int const len = int(m_socket.receive_from(boost::asio::buffer(*m_buf)
 			, p.from, 0, ec));
 
-		printf(" +++socket received from: %s : %s (%s)\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str(), ec.message().c_str() );
+		printf(" +++socket received from<>: %s : %s (%s)\n", p.from.address().to_string().c_str(), std::to_string(p.from.port()).c_str(), ec.message().c_str() );
 
         std::string message;
         message.append(" sirius alert: udp_socket::read: ");
