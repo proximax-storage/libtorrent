@@ -36,6 +36,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_SSL_HPP_INCLUDED
 #define TORRENT_SSL_HPP_INCLUDED
 
+#include <utility>
+
 #include "libtorrent/config.hpp"
 #include "libtorrent/string_view.hpp"
 #include "libtorrent/aux_/export.hpp"
