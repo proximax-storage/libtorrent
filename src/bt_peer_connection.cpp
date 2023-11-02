@@ -2329,7 +2329,7 @@ namespace {
                 auto port = root.dict_find_int_value("port");
 
                 if (port > 0) {
-                    delegate->onEndpointDiscovered(m_other_peer_key, std::make_optional<boost::asio::ip::tcp::endpoint>(m_remote.address(), port));
+                    delegate->onEndpointDiscovered(m_other_peer_key, boost::asio::ip::udp::endpoint{ m_remote.address(), m_remote.port() } );
                 }
 //                std::cerr << "+++ rd-EXT-handshake-and-verify-it ACCEPTED: " << is_outgoing()
 //                << " peer connection established: " << delegate->dbgOurPeerName()
