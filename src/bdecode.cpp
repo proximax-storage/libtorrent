@@ -855,7 +855,11 @@ namespace aux {
 
 			switch (t)
 			{
-				case 'd':
+#ifndef SIRIUS_DRIVE_MULTI
+                case 'd':
+#else
+                case 'X':
+#endif
 					stack[sp++] = stack_frame(int(ret.m_tokens.size()));
 					// we push it into the stack so that we know where to fill
 					// in the next_node field once we pop this node off the stack.

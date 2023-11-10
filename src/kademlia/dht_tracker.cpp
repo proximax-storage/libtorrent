@@ -512,7 +512,11 @@ namespace libtorrent { namespace dht {
 	{
 		int const buf_size = int(buf.size());
 		if (buf_size <= 20
+#ifndef SIRIUS_DRIVE_MULTI
 			|| buf.front() != 'd'
+#else
+            || buf.front() != 'X'
+#endif
 			|| buf.back() != 'e') return false;
 
 		m_counters.inc_stats_counter(counters::dht_bytes_in, buf_size);

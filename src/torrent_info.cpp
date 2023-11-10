@@ -1182,7 +1182,11 @@ namespace {
 			return false;
 		}
 
+#ifndef SIRIUS_DRIVE_MULTI
 		if (section.empty() || section[0] != 'd' || section[section.size() - 1] != 'e')
+#else
+        if (section.empty() || section[0] != 'X' || section[section.size() - 1] != 'e')
+#endif
 		{
 			ec = errors::invalid_bencoding;
 			return false;

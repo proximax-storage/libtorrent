@@ -163,7 +163,11 @@ namespace aux {
 			ret += 2;
 			break;
 		case entry::dictionary_t:
+#ifndef SIRIUS_DRIVE_MULTI
 			write_char(out, 'd');
+#else
+            write_char(out, 'X');
+#endif
 			for (auto const& i : e.dict())
 			{
 				// write key
@@ -271,7 +275,11 @@ namespace aux {
 
 		// ----------------------------------------------
 		// dictionary
+#ifndef SIRIUS_DRIVE_MULTI
 		case 'd':
+#else
+        case 'X':
+#endif
 			ret = entry(entry::dictionary_t);
 			++in; // 'd'
 			while (*in != 'e')

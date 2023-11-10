@@ -2564,7 +2564,11 @@ namespace {
 #ifndef TORRENT_DISABLE_DHT
 					auto listen_socket = ls.lock();
 					if (m_dht && buf.size() > 20
+#ifndef SIRIUS_DRIVE_MULTI
 						&& buf.front() == 'd'
+#else
+                        && buf.front() == 'X'
+#endif
 						&& buf.back() == 'e'
 						&& listen_socket)
 					{
