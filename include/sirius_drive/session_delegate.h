@@ -98,7 +98,6 @@ class session_delegate {
         virtual void onEndpointDiscovered(const std::array<uint8_t, 32>& key,
                                           const std::optional<udp::endpoint>& endpoint)
         {
-            // 'client' ignores this call
         }
 
         // It will be called by client (or replicator-receiver),
