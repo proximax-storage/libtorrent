@@ -263,7 +263,7 @@ class session_delegate {
         return ret;
     }
 
-    inline std::string toHex( const char* ptr, size_t len )
+    inline std::string toHex( const char* ptr, int len )
     {
         std::string ret;
         if ( len > 0 )
