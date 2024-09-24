@@ -697,11 +697,7 @@ if (NOT Windows)
 	string(REPLACE "std::atomic<int>" "std::atomic<std::int64_t>" ATOMICS64_TEST_SOURCE "${ATOMICS_TEST_SOURCE}")
 
 	if(APPLE)
-		if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-			set(CMAKE_REQUIRED_FLAGS "-std=c++11")
-		else()
-			set(CMAKE_REQUIRED_FLAGS "-std=c++14")
-		endif()
+		set(CMAKE_REQUIRED_FLAGS "-std=c++14")
 	endif()
 
 	check_cxx_source_compiles("${ATOMICS_TEST_SOURCE}" HAVE_CXX_ATOMICS_WITHOUT_LIB)
