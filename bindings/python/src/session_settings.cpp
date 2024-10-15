@@ -28,6 +28,12 @@ void bind_session_settings()
         .value("anti_leech", settings_pack::anti_leech)
     ;
 
+    enum_<settings_pack::mmap_write_mode_t>("mmap_write_mode_t")
+        .value("always_pwrite", settings_pack::always_pwrite)
+        .value("always_mmap_write", settings_pack::always_mmap_write)
+        .value("auto_mmap_write", settings_pack::auto_mmap_write)
+    ;
+
     enum_<settings_pack::suggest_mode_t>("suggest_mode_t")
         .value("no_piece_suggestions", settings_pack::no_piece_suggestions)
         .value("suggest_read_cache", settings_pack::suggest_read_cache)
@@ -39,6 +45,7 @@ void bind_session_settings()
         .value("disable_os_cache_for_aligned_files", settings_pack::disable_os_cache_for_aligned_files)
 #endif
         .value("disable_os_cache", settings_pack::disable_os_cache)
+        .value("write_through", settings_pack::write_through)
     ;
 
     enum_<settings_pack::bandwidth_mixed_algo_t>("bandwidth_mixed_algo_t")

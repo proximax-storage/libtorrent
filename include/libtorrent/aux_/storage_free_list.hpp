@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2021, Arvid Norberg
+Copyright (c) 2021-2022, Arvid Norberg
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,8 @@ namespace aux {
 		}
 
 		void add(storage_index_t const i) { m_free_slots.push_back(i); }
+
+		std::size_t size() const { return m_free_slots.size(); }
 
 	private:
 

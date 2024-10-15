@@ -1,10 +1,10 @@
 /*
 
-Copyright (c) 2017, Steven Siloti
-Copyright (c) 2017-2020, Arvid Norberg
 Copyright (c) 2017-2019, Alden Torres
-Copyright (c) 2020, Tiger Wang
+Copyright (c) 2017-2021, Arvid Norberg
+Copyright (c) 2017, Steven Siloti
 Copyright (c) 2020, Kacper Michajłow
+Copyright (c) 2020, Tiger Wang
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -102,31 +102,14 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <sys/types.h>
 #include <cerrno>
 #include <dirent.h>
-
-#ifdef TORRENT_LINUX
-// linux specifics
-
 #include <sys/ioctl.h>
-
-#elif defined __APPLE__ && defined __MACH__ && MAC_OS_X_VERSION_MIN_REQUIRED >= 1050
-// mac specifics
-
-#include <copyfile.h>
-
-#endif
 
 #endif // posix part
 
 #include "libtorrent/aux_/disable_warnings_pop.hpp"
+#include "libtorrent/aux_/storage_utils.hpp" // copy_file
 
 namespace libtorrent {
-
-	int bufs_size(span<iovec_t const> bufs)
-	{
-		std::ptrdiff_t size = 0;
-		for (auto buf : bufs) size += buf.size();
-		return int(size);
-	}
 
 #if defined TORRENT_WINDOWS
 	std::string convert_from_native_path(wchar_t const* s)
@@ -462,7 +445,9 @@ namespace {
 #endif
 
 		// if we get here, we should copy the file
-		copy_file(file, link, ec);
+		storage_error se;
+		aux::copy_file(file, link, se);
+		ec = se.ec;
 	}
 
 	bool is_directory(std::string const& f, error_code& ec)
@@ -474,105 +459,6 @@ namespace {
 		if (!e && s.mode & file_status::directory) return true;
 		ec = e;
 		return false;
-	}
-
-	void recursive_copy(std::string const& old_path, std::string const& new_path, error_code& ec)
-	{
-		TORRENT_ASSERT(!ec);
-		if (is_directory(old_path, ec))
-		{
-			create_directory(new_path, ec);
-			if (ec) return;
-			for (aux::directory i(old_path, ec); !i.done(); i.next(ec))
-			{
-				std::string f = i.file();
-				if (f == ".." || f == ".") continue;
-				recursive_copy(combine_path(old_path, f), combine_path(new_path, f), ec);
-				if (ec) return;
-			}
-		}
-		else if (!ec)
-		{
-			copy_file(old_path, new_path, ec);
-		}
-	}
-
-	void copy_file(std::string const& inf, std::string const& newf, error_code& ec)
-	{
-		ec.clear();
-		native_path_string f1 = convert_to_native_path_string(inf);
-		native_path_string f2 = convert_to_native_path_string(newf);
-
-#ifdef TORRENT_WINDOWS
-
-		if (CopyFileW(f1.c_str(), f2.c_str(), false) == 0)
-			ec.assign(GetLastError(), system_category());
-
-#elif defined __APPLE__ && defined __MACH__ && MAC_OS_X_VERSION_MIN_REQUIRED >= 1050
-		// this only works on 10.5
-		copyfile_state_t state = copyfile_state_alloc();
-		if (copyfile(f1.c_str(), f2.c_str(), state, COPYFILE_ALL) < 0)
-			ec.assign(errno, system_category());
-		copyfile_state_free(state);
-#else
-		int const infd = ::open(f1.c_str(), O_RDONLY);
-		if (infd < 0)
-		{
-			ec.assign(errno, system_category());
-			return;
-		}
-
-		// rely on default umask to filter x and w permissions
-		// for group and others
-		mode_t const permissions = S_IRUSR | S_IWUSR
-			| S_IRGRP | S_IWGRP
-			| S_IROTH | S_IWOTH;
-
-		int const outfd = ::open(f2.c_str(), O_WRONLY | O_CREAT, permissions);
-		if (outfd < 0)
-		{
-			close(infd);
-			ec.assign(errno, system_category());
-			return;
-		}
-		char buffer[4096];
-		for (;;)
-		{
-			int const num_read = int(read(infd, buffer, sizeof(buffer)));
-			if (num_read == 0) break;
-			if (num_read < 0)
-			{
-				ec.assign(errno, system_category());
-				break;
-			}
-			int const num_written = int(write(outfd, buffer, std::size_t(num_read)));
-			if (num_written < num_read)
-			{
-				ec.assign(errno, system_category());
-				break;
-			}
-			if (num_read < int(sizeof(buffer))) break;
-		}
-		close(infd);
-		close(outfd);
-#endif // TORRENT_WINDOWS
-	}
-
-	void move_file(std::string const& inf, std::string const& newf, error_code& ec)
-	{
-		ec.clear();
-
-		file_status s;
-		stat_file(inf, &s, ec);
-		if (ec) return;
-
-		if (has_parent_path(newf))
-		{
-			create_directories(parent_path(newf), ec);
-			if (ec) return;
-		}
-
-		rename(inf, newf, ec);
 	}
 
 	std::string extension(std::string const& f)
@@ -828,7 +714,7 @@ namespace {
 		// count number of path elements left in base, and prepend that number of
 		// "../" to target
 
-		// base alwaus points to a directory. There's an implied directory
+		// base always points to a directory. There's an implied directory
 		// separator at the end of it
 		int const num_steps = static_cast<int>(std::count(
 			base.begin(), base.end(), TORRENT_SEPARATOR_CHAR)) + (base.empty() ? 0 : 1);
@@ -923,7 +809,9 @@ namespace {
 		stat_file(f, &s, ec);
 		if (ec)
 		{
-			if (ec == boost::system::errc::no_such_file_or_directory)
+			// if the filename is too long, the file also cannot exist
+			if (ec == boost::system::errc::no_such_file_or_directory
+				|| ec == boost::system::errc::filename_too_long)
 				ec.clear();
 			return false;
 		}

@@ -1,8 +1,8 @@
 /*
 
-Copyright (c) 2008-2020, Arvid Norberg
-Copyright (c) 2016, Pavel Pimenov
+Copyright (c) 2008-2022, Arvid Norberg
 Copyright (c) 2016-2017, 2019-2020, Alden Torres
+Copyright (c) 2016, Pavel Pimenov
 Copyright (c) 2017, Steven Siloti
 Copyright (c) 2018, Mike Tzou
 All rights reserved.
@@ -46,6 +46,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/session_settings.hpp"
 #include "libtorrent/session.hpp" // for default_disk_io_constructor
 #include "libtorrent/aux_/directory.hpp"
+#include "libtorrent/aux_/time.hpp" // for posix_time
 #include "libtorrent/disk_interface.hpp"
 
 #include <sys/types.h>
@@ -75,6 +76,9 @@ namespace libtorrent {
 	constexpr create_flags_t create_torrent::v2_only;
 	constexpr create_flags_t create_torrent::v1_only;
 	constexpr create_flags_t create_torrent::canonical_files;
+	constexpr create_flags_t create_torrent::no_attributes;
+	constexpr create_flags_t create_torrent::canonical_files_no_tail_padding;
+	constexpr create_flags_t create_torrent::allow_odd_piece_size;
 
 namespace {
 
@@ -131,7 +135,9 @@ namespace {
 		else
 		{
 			// #error use the fields from s
-			file_flags_t const file_flags = aux::get_file_attributes(f);
+			file_flags_t const file_flags = (flags & create_torrent::no_attributes)
+				? file_flags_t{}
+				: aux::get_file_attributes(f);
 
 			// mask all bits to check if the file is a symlink
 			if ((file_flags & file_storage::flag_symlink)
@@ -182,6 +188,7 @@ namespace {
 
 				auto const file_piece_offset = piece - file_first_piece;
 				auto const file_size = st->ct.files().file_size(current_file);
+				TORRENT_ASSERT(file_size > 0);
 				auto const file_blocks = st->ct.files().file_num_blocks(current_file);
 				auto const piece_blocks = st->ct.files().blocks_in_piece2(piece);
 				int const num_leafs = merkle_num_leafs(file_blocks);
@@ -286,8 +293,6 @@ namespace {
 		, std::function<void(piece_index_t)> const& f, error_code& ec)
 	{
 		aux::session_settings sett;
-		int const num_threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency() / 2));
-		sett.set_int(settings_pack::hashing_threads, num_threads);
 		set_piece_hashes(t, p, sett, f, ec);
 	}
 
@@ -417,7 +422,7 @@ namespace {
 	create_torrent::create_torrent(file_storage& fs, int piece_size
 		, create_flags_t const flags)
 		: m_files(fs)
-		, m_creation_date(::time(nullptr))
+		, m_creation_date(aux::posix_time())
 		, m_multifile(fs.num_files() > 1)
 		, m_private(false)
 		, m_include_mtime(bool(flags & create_torrent::modification_time))
@@ -475,22 +480,32 @@ namespace {
 				aux::throw_ex<system_error>(errors::invalid_piece_size);
 		}
 		else if ((piece_size % (16 * 1024)) != 0
-			&& (piece_size & (piece_size - 1)) != 0)
+			&& (piece_size & (piece_size - 1)) != 0
+			&& !(flags & allow_odd_piece_size))
 		{
 			// v1 torrents should have piece sizes divisible by 16 kiB
 			aux::throw_ex<system_error>(errors::invalid_piece_size);
 		}
 
-		m_files.set_piece_length(piece_size);
-		if (!(flags & v1_only) || (flags & canonical_files))
-			m_files.canonicalize();
-		m_files.set_num_pieces(aux::calc_num_pieces(m_files));
-		TORRENT_ASSERT(m_files.piece_length() > 0);
+		// this is an unreasonably large piece size. Some clients don't support
+		// pieces this large.
+		if (piece_size > 128 * 1024 * 1024) {
+			aux::throw_ex<system_error>(errors::invalid_piece_size);
+		}
+
+		fs.set_piece_length(piece_size);
+		if (!(flags & v1_only)
+			|| (flags & canonical_files)
+			|| (flags & canonical_files_no_tail_padding))
+			fs.canonicalize_impl(bool(flags & canonical_files_no_tail_padding));
+
+		fs.set_num_pieces(aux::calc_num_pieces(fs));
+		TORRENT_ASSERT(fs.piece_length() > 0);
 	}
 
 	create_torrent::create_torrent(torrent_info const& ti)
-		: m_files(const_cast<file_storage&>(ti.files()))
-		, m_creation_date(::time(nullptr))
+		: m_files(ti.files())
+		, m_creation_date(aux::posix_time())
 		, m_multifile(ti.num_files() > 1)
 		, m_private(ti.priv())
 		, m_include_mtime(false)
@@ -542,6 +557,7 @@ namespace {
 			{
 				// don't include merkle hash trees for pad files
 				if (m_files.pad_file_at(i)) continue;
+				if (m_files.file_size(i) == 0) continue;
 
 				auto const file_size = m_files.file_size(i);
 				if (file_size <= m_files.piece_length())
@@ -629,6 +645,14 @@ namespace {
 	}
 }
 
+	std::vector<char> create_torrent::generate_buf() const
+	{
+		// TODO: this can be optimized
+		std::vector<char> ret;
+		bencode(std::back_inserter(ret), generate());
+		return ret;
+	}
+
 	entry create_torrent::generate() const
 	{
 		if (m_files.num_files() == 0 || m_files.total_size() == 0)
@@ -655,30 +679,30 @@ namespace {
 			entry::list_type& nodes_list = nodes.list();
 			for (auto const& n : m_nodes)
 			{
-				entry::list_type node;
-				node.emplace_back(n.first);
-				node.emplace_back(n.second);
-				nodes_list.emplace_back(node);
+				entry::list_type node(2);
+				node[0] = n.first;
+				node[1] = n.second;
+				nodes_list.emplace_back(std::move(node));
 			}
 		}
 
 		if (m_urls.size() > 1)
 		{
-			entry trackers(entry::list_t);
-			entry tier(entry::list_t);
+			entry::list_type trackers;
+			entry::list_type tier;
 			int current_tier = m_urls.front().second;
 			for (auto const& url : m_urls)
 			{
 				if (url.second != current_tier)
 				{
 					current_tier = url.second;
-					trackers.list().push_back(tier);
-					tier.list().clear();
+					trackers.emplace_back(std::move(tier));
+					tier.clear();
 				}
-				tier.list().emplace_back(url.first);
+				tier.emplace_back(url.first);
 			}
-			trackers.list().push_back(tier);
-			dict["announce-list"] = trackers;
+			trackers.emplace_back(std::move(tier));
+			dict["announce-list"] = std::move(trackers);
 		}
 
 		if (!m_comment.empty())
@@ -967,6 +991,7 @@ namespace {
 		TORRENT_ASSERT_PRECOND(piece < piece_index_t::diff_type(m_files.file_num_pieces(file)));
 		TORRENT_ASSERT_PRECOND(!m_files.pad_file_at(file));
 		TORRENT_ASSERT_PRECOND(!h.is_all_zeros());
+		TORRENT_ASSERT_PRECOND(m_files.file_num_pieces(file) > 0);
 
 		if (m_v1_only)
 			aux::throw_ex<system_error>(errors::invalid_hash_entry);

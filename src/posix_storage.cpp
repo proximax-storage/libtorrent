@@ -1,7 +1,8 @@
 /*
 
-Copyright (c) 2016, 2019-2020, Arvid Norberg
+Copyright (c) 2016, 2019-2022, Arvid Norberg
 Copyright (c) 2020, pavel-pimenov
+Copyright (c) 2021, Alden Torres
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -34,16 +35,12 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/config.hpp"
 #include "libtorrent/settings_pack.hpp"
 #include "libtorrent/aux_/posix_storage.hpp"
-#include "libtorrent/aux_/path.hpp" // for bufs_size
+#include "libtorrent/aux_/path.hpp"
 #include "libtorrent/aux_/open_mode.hpp"
 #include "libtorrent/aux_/file_pointer.hpp"
 #include "libtorrent/torrent_status.hpp"
 #ifdef TORRENT_WINDOWS
 #include "libtorrent/utf8.hpp"
-#endif
-
-#if TORRENT_HAS_SYMLINK
-#include <unistd.h> // for symlink()
 #endif
 
 using namespace libtorrent::flags; // for flag operators
@@ -64,6 +61,7 @@ namespace aux {
 	posix_storage::posix_storage(storage_params const& p)
 		: m_files(p.files)
 		, m_save_path(p.path)
+		, m_file_priority(p.priorities)
 		, m_part_file_name("." + to_hex(p.info_hash) + ".parts")
 	{
 		if (p.mapped_files) m_mapped_files.reset(new file_storage(*p.mapped_files));
@@ -86,7 +84,8 @@ namespace aux {
 			, files().num_pieces(), files().piece_length());
 	}
 
-	void posix_storage::set_file_priority(aux::vector<download_priority_t, file_index_t>& prio
+	void posix_storage::set_file_priority(settings_interface const&
+		, aux::vector<download_priority_t, file_index_t>& prio
 		, storage_error& ec)
 	{
 		// extend our file priorities in case it's truncated
@@ -111,11 +110,11 @@ namespace aux {
 						// move stuff out of the part file
 						file_pointer const f = open_file(i, open_mode::write, file_offset, ec);
 						if (ec) return;
-						int const r = static_cast<int>(fwrite(buf.data(), 1
+						int const r = static_cast<int>(std::fwrite(buf.data(), 1
 							, static_cast<std::size_t>(buf.size()), f.file()));
 						if (r != buf.size())
 						{
-							if (ferror(f.file())) ec.ec.assign(errno, generic_category());
+							if (std::ferror(f.file())) ec.ec.assign(errno, generic_category());
 							else ec.ec.assign(errors::file_too_short, libtorrent_category());
 							return;
 						}
@@ -137,7 +136,7 @@ namespace aux {
 				// so we just don't use a partfile for this file
 
 				std::string const fp = fs.file_path(i, m_save_path);
-				if (exists(fp, ec.ec)) use_partfile(i, false);
+				bool const file_exists = exists(fp, ec.ec);
 				if (ec.ec)
 				{
 					ec.file(i);
@@ -145,6 +144,7 @@ namespace aux {
 					prio = m_file_priority;
 					return;
 				}
+				use_partfile(i, !file_exists);
 			}
 			ec.ec.clear();
 			m_file_priority[i] = new_prio;
@@ -162,18 +162,21 @@ namespace aux {
 		}
 	}
 
-	int posix_storage::readv(settings_interface const&
-		, span<iovec_t const> bufs
+	int posix_storage::read(settings_interface const&
+		, span<char> buffer
 		, piece_index_t const piece, int const offset
 		, storage_error& error)
 	{
-		return readwritev(files(), bufs, piece, offset, error
+#ifdef TORRENT_SIMULATE_SLOW_READ
+		std::this_thread::sleep_for(milliseconds(rand() % 2000));
+#endif
+		return readwrite(files(), buffer, piece, offset, error
 			, [this](file_index_t const file_index
 				, std::int64_t const file_offset
-				, span<iovec_t const> vec, storage_error& ec)
+				, span<char> buf, storage_error& ec)
 		{
 			// reading from a pad file yields zeroes
-			if (files().pad_file_at(file_index)) return aux::read_zeroes(vec);
+			if (files().pad_file_at(file_index)) return aux::read_zeroes(buf);
 
 			if (file_index < m_file_priority.end_index()
 				&& m_file_priority[file_index] == dont_download
@@ -183,12 +186,11 @@ namespace aux {
 
 				error_code e;
 				peer_request map = files().map_file(file_index, file_offset, 0);
-				int const ret = m_part_file->readv(vec, map.piece, map.start, e);
+				int const ret = m_part_file->read(buf, map.piece, map.start, e);
 
 				if (e)
 				{
 					ec.ec = e;
-					ec.file(file_index);
 					ec.operation = operation_t::partfile_read;
 					return -1;
 				}
@@ -204,50 +206,39 @@ namespace aux {
 			ec.operation = operation_t::file_read;
 
 			int ret = 0;
-			for (auto buf : vec)
+			int const r = static_cast<int>(std::fread(buf.data(), 1
+				, static_cast<std::size_t>(buf.size()), f.file()));
+			if (r == 0)
 			{
-				int const r = static_cast<int>(fread(buf.data(), 1
-					, static_cast<std::size_t>(buf.size()), f.file()));
-				if (r == 0)
-				{
-					if (ferror(f.file())) ec.ec.assign(errno, generic_category());
-					else ec.ec.assign(errors::file_too_short, libtorrent_category());
-					break;
-				}
-				ret += r;
-
-				// the file may be shorter than we think
-				if (r < buf.size()) break;
+				if (std::ferror(f.file())) ec.ec.assign(errno, generic_category());
+				else ec.ec.assign(errors::file_too_short, libtorrent_category());
 			}
+			ret += r;
 
 			// we either get an error or 0 or more bytes read
 			TORRENT_ASSERT(ec.ec || ret > 0);
-			TORRENT_ASSERT(ret <= bufs_size(vec));
-
-			if (ec.ec)
-			{
-				ec.file(file_index);
-				return -1;
-			}
-
+			TORRENT_ASSERT(ret <= buf.size());
 			return ret;
 		});
 	}
 
-	int posix_storage::writev(settings_interface const&
-		, span<iovec_t const> bufs
+	int posix_storage::write(settings_interface const&
+		, span<char> buffer
 		, piece_index_t const piece, int const offset
 		, storage_error& error)
 	{
-		return readwritev(files(), bufs, piece, offset, error
+#ifdef TORRENT_SIMULATE_SLOW_WRITE
+		std::this_thread::sleep_for(milliseconds(rand() % 800));
+#endif
+		return readwrite(files(), buffer, piece, offset, error
 			, [this](file_index_t const file_index
 				, std::int64_t const file_offset
-				, span<iovec_t const> vec, storage_error& ec)
+				, span<char> buf, storage_error& ec)
 		{
 			if (files().pad_file_at(file_index))
 			{
 				// writing to a pad-file is a no-op
-				return bufs_size(vec);
+				return int(buf.size());
 			}
 
 			if (file_index < m_file_priority.end_index()
@@ -259,14 +250,12 @@ namespace aux {
 				error_code e;
 				peer_request map = files().map_file(file_index
 					, file_offset, 0);
-				int const ret = m_part_file->writev(vec, map.piece, map.start, e);
+				int const ret = m_part_file->write(buf, map.piece, map.start, e);
 
 				if (e)
 				{
 					ec.ec = e;
-					ec.file(file_index);
 					ec.operation = operation_t::partfile_write;
-					return -1;
 				}
 				return ret;
 			}
@@ -280,29 +269,18 @@ namespace aux {
 			ec.operation = operation_t::file_write;
 
 			int ret = 0;
-			for (auto buf : vec)
+			auto const r = static_cast<int>(std::fwrite(buf.data(), 1
+				, static_cast<std::size_t>(buf.size()), f.file()));
+			if (r != buf.size())
 			{
-				auto const r = static_cast<int>(fwrite(buf.data(), 1
-					, static_cast<std::size_t>(buf.size()), f.file()));
-				if (r != buf.size())
-				{
-					if (ferror(f.file())) ec.ec.assign(errno, generic_category());
-					else ec.ec.assign(errors::file_too_short, libtorrent_category());
-					break;
-				}
-				ret += r;
+				if (std::ferror(f.file())) ec.ec.assign(errno, generic_category());
+				else ec.ec.assign(errors::file_too_short, libtorrent_category());
 			}
+			ret += r;
 
 			// invalidate our stat cache for this file, since
 			// we're writing to it
 			m_stat_cache.set_dirty(file_index);
-
-			if (ec)
-			{
-				ec.file(file_index);
-				return -1;
-			}
-
 			return ret;
 		});
 	}
@@ -407,7 +385,7 @@ namespace aux {
 		m_mapped_files->rename_file(index, new_filename);
 	}
 
-	void posix_storage::initialize(settings_interface const&, storage_error& ec)
+	status_t posix_storage::initialize(settings_interface const&, storage_error& ec)
 	{
 		m_stat_cache.reserve(files().num_files());
 
@@ -416,6 +394,7 @@ namespace aux {
 		// filesystem, in which case we won't use a partfile for them.
 		// this is to be backwards compatible with previous versions of
 		// libtorrent, when part files were not supported.
+		status_t ret{};
 		for (file_index_t i(0); i < m_file_priority.end_index(); ++i)
 		{
 			if (m_file_priority[i] != dont_download || fs.pad_file_at(i))
@@ -425,6 +404,10 @@ namespace aux {
 			std::string const file_path = fs.file_path(i, m_save_path);
 			error_code err;
 			stat_file(file_path, &s, err);
+
+			if (s.file_size > fs.file_size(i))
+				ret = ret | status_t::oversized_file;
+
 			if (!err)
 			{
 				use_partfile(i, false);
@@ -435,93 +418,13 @@ namespace aux {
 			}
 		}
 
-		// first, create zero-sized files
-		for (auto file_index : fs.file_range())
-		{
-			// ignore files that have priority 0
-			if (m_file_priority.end_index() > file_index
-				&& m_file_priority[file_index] == dont_download)
-			{
-				continue;
-			}
-
-			// ignore pad files
-			if (fs.pad_file_at(file_index)) continue;
-
-			error_code err;
-			m_stat_cache.get_filesize(file_index, fs, m_save_path, err);
-
-			if (err && err != boost::system::errc::no_such_file_or_directory)
-			{
-				ec.file(file_index);
-				ec.operation = operation_t::file_stat;
-				ec.ec = err;
-				break;
-			}
-
-			// if the file is empty and doesn't already exist, create it
-			// deliberately don't truncate files that already exist
-			// if a file is supposed to have size 0, but already exists, we will
-			// never truncate it to 0.
-			if (fs.file_size(file_index) == 0)
-			{
-#if TORRENT_HAS_SYMLINK
-				// create symlinks
-				if (fs.file_flags(file_index) & file_storage::flag_symlink)
-				{
-					std::string path = fs.file_path(file_index, m_save_path);
-					create_directories(parent_path(path), ec.ec);
-					if (ec)
-					{
-						ec.ec = error_code(errno, generic_category());
-						ec.file(file_index);
-						ec.operation = operation_t::mkdir;
-						break;
-					}
-					std::string const target = lexically_relative(
-						parent_path(fs.file_path(file_index)), fs.symlink(file_index));
-					std::string const link = fs.file_path(file_index, m_save_path);
-					if (::symlink(target.c_str(), link.c_str()) != 0)
-					{
-						int const error = errno;
-						if (error == EEXIST)
-						{
-							// if the file exist, it may be a symlink already. if so,
-							// just verify the link target is what it's supposed to be
-							// note that readlink() does not null terminate the buffer
-							char buffer[512];
-							auto const ret = ::readlink(link.c_str(), buffer, sizeof(buffer));
-							if (ret <= 0 || target != string_view(buffer, std::size_t(ret)))
-							{
-								ec.ec = error_code(error, generic_category());
-								ec.file(file_index);
-								ec.operation = operation_t::symlink;
-								return;
-							}
-						}
-						else
-						{
-							ec.ec = error_code(errno, generic_category());
-							ec.file(file_index);
-							ec.operation = operation_t::symlink;
-							break;
-						}
-					}
-				}
-				else
-#endif
-				if (err == boost::system::errc::no_such_file_or_directory)
-				{
-					// just creating the file is enough to make it zero-sized. If
-					// there's a race here and some other process truncates the file,
-					// it's not a problem, we won't access empty files ever again
-					ec.ec.clear();
-					file_pointer f = open_file(file_index, aux::open_mode::write, 0, ec);
-					if (ec) return;
-				}
-			}
-			ec.ec.clear();
-		}
+		aux::initialize_storage(fs, m_save_path, m_stat_cache, m_file_priority
+			, [this](file_index_t const file_index, storage_error& e)
+			{ open_file(file_index, aux::open_mode::write, 0, e); }
+			, aux::create_symlink
+			, [&ret](file_index_t, std::int64_t) { ret = ret | status_t::oversized_file; }
+			, ec);
+		return ret;
 	}
 
 	file_pointer posix_storage::open_file(file_index_t idx, open_mode_t const mode
@@ -548,8 +451,15 @@ namespace aux {
 			// if we fail to open a file for writing, and the error is ENOENT,
 			// it is likely because the directory we're creating the file in
 			// does not exist. Create the directory and try again.
-			if ((mode & open_mode::write)
-				&& ec.ec == boost::system::errc::no_such_file_or_directory)
+			if ((mode & aux::open_mode::write)
+				&& (ec.ec == boost::system::errc::no_such_file_or_directory
+#ifdef TORRENT_WINDOWS
+					// this is a workaround for improper handling of files on windows shared drives.
+					// if the directory on a shared drive does not exist,
+					// windows returns ERROR_IO_DEVICE instead of ERROR_FILE_NOT_FOUND
+					|| ec.ec == error_code(ERROR_IO_DEVICE, system_category())
+#endif
+			))
 			{
 				// this means the directory the file is in doesn't exist.
 				// so create it
@@ -611,7 +521,13 @@ namespace aux {
 
 	void posix_storage::use_partfile(file_index_t const index, bool const b)
 	{
-		if (index >= m_use_partfile.end_index()) m_use_partfile.resize(static_cast<int>(index) + 1, true);
+		if (index >= m_use_partfile.end_index())
+		{
+			// no need to extend this array if we're just setting it to "true",
+			// that's default already
+			if (b) return;
+			m_use_partfile.resize(static_cast<int>(index) + 1, true);
+		}
 		m_use_partfile[index] = b;
 	}
 

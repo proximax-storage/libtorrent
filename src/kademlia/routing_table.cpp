@@ -1,12 +1,12 @@
 /*
 
 Copyright (c) 2006-2020, Arvid Norberg
-Copyright (c) 2015, Thomas Yuan
 Copyright (c) 2015-2016, 2018, Steven Siloti
+Copyright (c) 2015, Thomas Yuan
 Copyright (c) 2016-2018, Alden Torres
+Copyright (c) 2016, Andrei Kurushin
 Copyright (c) 2016, Angel Leon
 Copyright (c) 2016, Pavel Pimenov
-Copyright (c) 2016, Andrei Kurushin
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -678,7 +678,7 @@ routing_table::add_node_status_t routing_table::add_node_impl(node_entry e)
 				existing->update_rtt(e.rtt);
 				existing->last_queried = e.last_queried;
 			}
-			// if this was a replacement node it may be elligible for
+			// if this was a replacement node it may be eligible for
 			// promotion to the live bucket
 			fill_from_replacements(existing_bucket);
 			prune_empty_bucket();

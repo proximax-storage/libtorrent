@@ -3,16 +3,24 @@
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import time
+
+from vmstat import capture_sample
+from vmstat import plot_output
+from vmstat import print_output_to_file
 
 
 def main():
     args = parse_args()
 
-    ret = os.system('cd ../examples && b2 release %s stage_client_test stage_connection_tester'
-                    % args.toolset)
+    ret = os.system(f"cd ../examples && b2 release {args.toolset} stage_client_test stage_connection_tester")
+    save_dir = args.directory
+    print(f"save dir: {save_dir}")
+
     if ret != 0:
         print('ERROR: build failed: %d' % ret)
         sys.exit(1)
@@ -26,17 +34,21 @@ def main():
             print('ERROR: connection_tester failed: %d' % ret)
             sys.exit(1)
 
-    if not os.path.exists('checking_benchmark'):
-        ret = os.system('../examples/connection_tester gen-data -t checking_benchmark.torrent -p .')
+    if not os.path.exists(f"{save_dir}/checking_benchmark"):
+        cmd_line = f'../examples/connection_tester gen-data -t checking_benchmark.torrent -P {save_dir}'
+        print(cmd_line)
+        ret = os.system(cmd_line)
         if ret != 0:
             print('ERROR: connection_tester failed: %d' % ret)
             sys.exit(1)
 
-    for threads in [4, 8, 16, 32, 64]:
-        run_test('%d' % threads, '--hashing_threads=%d' % threads)
+    for threads in [1, 2, 4, 8, 16, 32, 64]:
+        print("drop caches now. e.g. \"echo 1 | sudo tee /proc/sys/vm/drop_caches\"")
+        input("Press Enter to continue...")
+        run_test(f"{threads}", f"--hashing_threads={threads}", save_dir)
 
 
-def run_test(name, client_arg):
+def run_test(name, client_arg, save_dir: str):
     output_dir = 'logs_checking_%s' % name
 
     timing_path = os.path.join(output_dir, 'timing.txt')
@@ -50,17 +62,29 @@ def run_test(name, client_arg):
     except Exception:
         pass
 
-    rm_file_or_dir(".resume")
+    rm_file_or_dir(f"{save_dir}/.resume")
 
     client_cmd = ('../examples/client_test checking_benchmark.torrent '
-                  '--enable_dht=0 --enable_lsd=0 --enable_upnp=0 --enable_natpmp=0 '
-                  '-1 %s -s . -f %s/events.log --alert_mask=all'
-                  ) % (client_arg, output_dir)
+        '--enable_dht=0 --enable_lsd=0 --enable_upnp=0 --enable_natpmp=0 '
+        f'-1 {client_arg} -s {save_dir} -f {output_dir}/events.log --alert_mask=all')
 
     client_out = open('%s/client.out' % output_dir, 'w+')
     print('client_cmd: "{cmd}"'.format(cmd=client_cmd))
     c = subprocess.Popen(client_cmd.split(' '), stdout=client_out, stderr=client_out, stdin=subprocess.PIPE)
-    c.wait()
+
+    start = time.monotonic()
+    if platform.system() == "Linux":
+        out = {}
+        while c.returncode is None:
+            capture_sample(c.pid, start, out)
+            time.sleep(0.1)
+            c.poll()
+
+        stats_filename = f"{output_dir}/memory_stats.log"
+        keys = print_output_to_file(out, stats_filename)
+        plot_output(stats_filename, keys)
+    else:
+        c.wait()
 
     client_out.close()
 
@@ -96,6 +120,7 @@ def rm_file_or_dir(path):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--toolset', default="")
+    p.add_argument('--directory', default=".")
 
     return p.parse_args()
 

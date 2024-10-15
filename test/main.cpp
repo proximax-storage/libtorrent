@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2005, 2008, 2010, 2012-2020, Arvid Norberg
+Copyright (c) 2005, 2008, 2010, 2012-2022, Arvid Norberg
 Copyright (c) 2017, Andrei Kurushin
 Copyright (c) 2018, Steven Siloti
 All rights reserved.
@@ -39,7 +39,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <cstdlib> // for exit()
 #include "libtorrent/address.hpp"
 #include "libtorrent/socket.hpp"
-#include "setup_transfer.hpp" // for _g_test_failures
+#include "setup_transfer.hpp" // for unit_test::g_test_failures
 #include "test.hpp"
 #include "dht_server.hpp" // for stop_dht
 #include "peer_server.hpp" // for stop_peer
@@ -53,7 +53,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <csignal>
 
 #ifdef _WIN32
-#include "libtorrent/aux_/windows.hpp" // fot SetErrorMode
+#include "libtorrent/aux_/windows.hpp" // for SetErrorMode
 #include <io.h> // for _dup and _dup2
 #include <process.h> // for _getpid
 #include <crtdbg.h>
@@ -86,7 +86,7 @@ bool redirect_stderr = false;
 bool keep_files = false;
 
 // the current tests file descriptor
-unit_test_t* current_test = nullptr;
+unit_test::unit_test_t* current_test = nullptr;
 
 void output_test_log_to_terminal()
 {
@@ -134,7 +134,7 @@ LONG WINAPI seh_exception_handler(LPEXCEPTION_POINTERS p)
 	strcpy(stack_text, "<stack traces disabled>");
 #endif
 
-	int const code = p->ExceptionRecord->ExceptionCode;
+	DWORD const code = p->ExceptionRecord->ExceptionCode;
 	char const* name = "<unknown exception>";
 	switch (code)
 	{
@@ -297,6 +297,8 @@ private:
 	std::string dir;
 };
 
+namespace unit_test {
+
 void EXPORT reset_output()
 {
 	if (current_test == nullptr || current_test->output == nullptr) return;
@@ -313,6 +315,8 @@ void EXPORT reset_output()
 		// this is best effort, it's not the end of the world if we fail
 		std::cerr << "ftruncate of temporary test output file failed: " << strerror(errno) << "\n";
 	}
+}
+
 }
 
 int EXPORT main(int argc, char const* argv[])
@@ -334,9 +338,9 @@ int EXPORT main(int argc, char const* argv[])
 		if (argv[0] == "-l"_sv || argv[0] == "--list"_sv)
 		{
 			std::printf("TESTS:\n");
-			for (int i = 0; i < _g_num_unit_tests; ++i)
+			for (int i = 0; i < ::unit_test::g_num_unit_tests; ++i)
 			{
-				std::printf(" - %s\n", _g_unit_tests[i].name);
+				std::printf(" - %s\n", ::unit_test::g_unit_tests[i].name);
 			}
 			return 0;
 		}
@@ -418,7 +422,7 @@ int EXPORT main(int argc, char const* argv[])
 	std::string const unit_dir_prefix = combine_path(root_dir, "test_tmp_" + std::to_string(process_id) + "_");
 	std::printf("test: %s\ncwd_prefix = \"%s\"\n", executable, unit_dir_prefix.c_str());
 
-	if (_g_num_unit_tests == 0)
+	if (unit_test::g_num_unit_tests == 0)
 	{
 		std::printf("\x1b[31mTEST_ERROR: no unit tests registered\x1b[0m\n");
 		return 1;
@@ -428,9 +432,9 @@ int EXPORT main(int argc, char const* argv[])
 	if (redirect_stderr) old_stderr = dup(fileno(stderr));
 
 	int num_run = 0;
-	for (int i = 0; i < _g_num_unit_tests; ++i)
+	for (int i = 0; i < unit_test::g_num_unit_tests; ++i)
 	{
-		if (filter && tests_to_run.count(_g_unit_tests[i].name) == 0)
+		if (filter && tests_to_run.count(unit_test::g_unit_tests[i].name) == 0)
 			continue;
 
 		std::string const unit_dir = unit_dir_prefix + std::to_string(i);
@@ -451,33 +455,14 @@ int EXPORT main(int argc, char const* argv[])
 			return 1;
 		}
 
-		unit_test_t& t = _g_unit_tests[i];
+		auto& t = ::unit_test::g_unit_tests[i];
 
 		if (redirect_stdout || redirect_stderr)
 		{
 			// redirect test output to a temporary file
 			fflush(stdout);
 			fflush(stderr);
-
-#ifdef TORRENT_MINGW
-			// mingw has a buggy tmpfile() and tmpname() that needs a . prepended
-			// to it (or some other directory)
-			char temp_name[512];
-			FILE* f = nullptr;
-			if (tmpnam_s(temp_name + 1, sizeof(temp_name) - 1) == 0)
-			{
-				temp_name[0] = '.';
-				std::printf("using temporary filename %s\n", temp_name);
-				f = fopen(temp_name, "wb+");
-			}
-			else
-			{
-				std::printf("failed to generate filename for redirecting "
-					"output: (%d) %s\n", errno, strerror(errno));
-			}
-#else
 			FILE* f = tmpfile();
-#endif
 			if (f != nullptr)
 			{
 				int ret1 = 0;
@@ -504,7 +489,7 @@ int EXPORT main(int argc, char const* argv[])
 		setbuf(stdout, nullptr);
 		setbuf(stderr, nullptr);
 
-		_g_test_idx = i;
+		::unit_test::g_test_idx = i;
 		current_test = &t;
 
 		std::printf("cwd: %s\n", unit_dir.c_str());
@@ -518,10 +503,10 @@ int EXPORT main(int argc, char const* argv[])
 		{
 #endif
 
-			std::srand(unsigned(std::hash<std::string>{}(executable)) + unsigned(i));
+			std::srand(0x82daf973);
 			lt::aux::random_engine().seed(0x82daf973);
 
-			_g_test_failures = 0;
+			::unit_test::g_test_failures = 0;
 			(*t.fun)();
 #ifndef BOOST_NO_EXCEPTIONS
 		}
@@ -532,28 +517,28 @@ int EXPORT main(int argc, char const* argv[])
 				, e.code().value()
 				, e.code().category().name()
 				, e.code().message().c_str());
-			report_failure(buf, __FILE__, __LINE__);
+			unit_test::report_failure(buf, __FILE__, __LINE__);
 		}
 		catch (std::exception const& e)
 		{
 			char buf[200];
 			std::snprintf(buf, sizeof(buf), "TEST_ERROR: Terminated with exception: \"%s\"", e.what());
-			report_failure(buf, __FILE__, __LINE__);
+			unit_test::report_failure(buf, __FILE__, __LINE__);
 		}
 		catch (...)
 		{
-			report_failure("TEST_ERROR: Terminated with unknown exception", __FILE__, __LINE__);
+			unit_test::report_failure("TEST_ERROR: Terminated with unknown exception", __FILE__, __LINE__);
 		}
 #endif
 
 		if (!tests_to_run.empty()) tests_to_run.erase(t.name);
 
-		if (_g_test_failures > 0)
+		if (::unit_test::g_test_failures > 0)
 		{
 			output_test_log_to_terminal();
 		}
 
-		t.num_failures = _g_test_failures;
+		t.num_failures = ::unit_test::g_test_failures;
 		t.run = true;
 		++num_run;
 
@@ -566,7 +551,7 @@ int EXPORT main(int argc, char const* argv[])
 
 	if (!tests_to_run.empty())
 	{
-		std::printf("\x1b[1mUNKONWN tests:\x1b[0m\n");
+		std::printf("\x1b[1mUNKNOWN tests:\x1b[0m\n");
 		for (std::set<std::string>::iterator i = tests_to_run.begin()
 			, end(tests_to_run.end()); i != end; ++i)
 		{
@@ -592,6 +577,6 @@ int EXPORT main(int argc, char const* argv[])
 	if (redirect_stdout) fflush(stdout);
 	if (redirect_stderr) fflush(stderr);
 
-	return print_failures() ? 333 : 0;
+	return unit_test::print_failures() ? 333 : 0;
 }
 

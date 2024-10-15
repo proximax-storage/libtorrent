@@ -1,7 +1,7 @@
 /*
 
-Copyright (c) 2010, 2013-2017, 2019-2020, Arvid Norberg
-Copyright (c) 2016, 2020, Alden Torres
+Copyright (c) 2010, 2013-2017, 2020, 2022, Arvid Norberg
+Copyright (c) 2020, Alden Torres
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -35,23 +35,23 @@ POSSIBILITY OF SUCH DAMAGE.
 #define TORRENT_DISK_JOB_POOL
 
 #include "libtorrent/config.hpp"
-#include "libtorrent/aux_/disk_io_job.hpp" // for job_action_t
+#include "libtorrent/aux_/mmap_disk_job.hpp" // for job_action_t
 #include "libtorrent/aux_/pool.hpp"
 #include <mutex>
 
 namespace libtorrent {
 namespace aux {
 
-	struct disk_io_job;
+	struct mmap_disk_job;
 
 	struct TORRENT_EXTRA_EXPORT disk_job_pool
 	{
 		disk_job_pool();
 		~disk_job_pool();
 
-		disk_io_job* allocate_job(job_action_t type);
-		void free_job(disk_io_job* j);
-		void free_jobs(disk_io_job** j, int num);
+		mmap_disk_job* allocate_job(job_action_t type);
+		void free_job(mmap_disk_job* j);
+		void free_jobs(mmap_disk_job** j, int num);
 
 		int jobs_in_use() const { return m_jobs_in_use; }
 		int read_jobs_in_use() const { return m_read_jobs; }
@@ -67,7 +67,7 @@ namespace aux {
 		int m_write_jobs;
 
 		std::mutex m_job_mutex;
-		aux::pool m_job_pool;
+		aux::object_pool<mmap_disk_job> m_job_pool;
 	};
 }
 }

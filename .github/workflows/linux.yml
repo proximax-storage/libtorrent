@@ -5,34 +5,46 @@ on:
       branches: [ RC_1_2 RC_2_0 master ]
    pull_request:
 
+concurrency:
+   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}
+   cancel-in-progress: true
+
 jobs:
 
    pre-commit:
-      # TODO: matrix across python version and os
       runs-on: ubuntu-latest
       steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
            submodules: recursive
-      - uses: actions/setup-python@v2
+           fetch-depth: 1
+           filter: tree:0
+
+      - uses: actions/setup-python@v5
         with:
-           python-version: 3.6
-      - uses: pre-commit/action@v2.0.0
+           python-version: "3.10"
+      - uses: pre-commit/action@v3.0.1
 
    build:
       name: build
-      runs-on: ubuntu-20.04
+      runs-on: ubuntu-22.04
       continue-on-error: true
 
       strategy:
          matrix:
-            config: [ asio-debugging=on picker-debugging=on, extensions=off logging=off streaming=off super-seeding=off share-mode=off predictive-pieces=off dht=off alert-msg=off encryption=off mutable-torrents=off deprecated-functions=off, crypto=gcrypt, mmap-disk-io=off ]
+            include:
+              - config: asio-debugging=on picker-debugging=on
+              - config: extensions=off logging=off streaming=off super-seeding=off share-mode=off predictive-pieces=off dht=off alert-msg=off encryption=off mutable-torrents=off deprecated-functions=off
+              - config: crypto=gcrypt
+              - config: mmap-disk-io=off
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -48,7 +60,7 @@ jobs:
 
       - name: install boost
         run: |
-          sudo apt install libboost-tools-dev libboost-dev libboost-system-dev
+          sudo apt install libboost-python-dev libboost-tools-dev libboost-dev libboost-system-dev python3
           echo "using gcc ;" >>~/user-config.jam
 
       - name: install gcrypt
@@ -57,18 +69,23 @@ jobs:
 
       - name: build library
         run: |
-          b2 ${{ matrix.config }} cxxstd=14
+          b2 ${{ matrix.config }} cxxstd=14,17,20 warnings-as-errors=on
 
       - name: build examples
         run: |
           cd examples
-          b2 ${{ matrix.config }}
+          b2 ${{ matrix.config }} cxxstd=14,17,20 warnings-as-errors=on
 
       - name: build tools
         run: |
           cd tools
-          b2 ${{ matrix.config }} warnings-as-errors=on
+          b2 ${{ matrix.config }} cxxstd=14,17,20 warnings-as-errors=on
 
+      - name: build python bindings
+        run: |
+          cd bindings/python
+          echo "using python ;" >>~/user-config.jam
+          BOOST_ROOT="" b2 ${{ matrix.config }} cxxstd=14,17,20 warnings-as-errors=on
 
 
    fuzzers:
@@ -78,9 +95,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -117,9 +136,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -150,9 +171,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -172,7 +195,7 @@ jobs:
       - name: install boost
         run: |
           sudo apt install libboost-tools-dev libboost-dev
-          echo "using clang_tidy : : clang-tidy \"-checks=-clang-analyzer-core.*,-clang-analyzer-unix.*\" : <cxxflags>-std=c++14 <cxxflags>-I/usr/local/clang-7.0.0/include/c++/v1 <cxxflags>-stdlib=libc++ <linkflags>-stdlib=libc++ ;" >> ~/user-config.jam;
+          echo "using clang_tidy : : clang-tidy \"-checks=-clang-analyzer-core.*,-clang-analyzer-unix.*\" : <cxxflags>-std=c++14 <cxxflags>-I/usr/local/clang-7.0.0/include/c++/v1 <cxxflags>-stdlib=libc++ <cxxflags>-Wno-unknown-warning-option <linkflags>-stdlib=libc++ ;" >> ~/user-config.jam;
 
       - name: analyze
         run: |
@@ -182,7 +205,7 @@ jobs:
 
    test:
       name: Tests
-      runs-on: ubuntu-20.04
+      runs-on: ubuntu-22.04
       continue-on-error: true
 
       strategy:
@@ -190,15 +213,17 @@ jobs:
             include:
                - config: address-sanitizer=norecover undefined-sanitizer=norecover crypto=openssl
                - config: toolset=clang logging=off address-sanitizer=norecover undefined-sanitizer=norecover
-               - config: thread-sanitizer=norecover crypto=openssl release debug-symbols=on
+               - config: thread-sanitizer=norecover crypto=openssl release debug-symbols=on cxxflags=-Wno-tsan
                - config: crypto=gnutls
                - config: deprecated-functions=off
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -217,16 +242,21 @@ jobs:
         run: |
           sudo apt install libgnutls28-dev
 
-      - name: install clang-10
+      - name: install clang-12
         continue-on-error: true
         run: |
-          sudo apt install clang-10
+          sudo apt install clang-12
+
+      - name: install GCC-12
+        continue-on-error: true
+        run: |
+          sudo apt install gcc-12
 
       - name: install boost
         run: |
           sudo apt install libboost-tools-dev libboost-dev libboost-system-dev
-          echo "using gcc ;" >>~/user-config.jam
-          echo "using clang : 10 : clang++-10 ;" >>~/user-config.jam
+          echo "using gcc : 12 : g++-12 ;" >>~/user-config.jam
+          echo "using clang : 12 : clang++-12 ;" >>~/user-config.jam
 
       - name: build and run tests
         run: |
@@ -234,7 +264,7 @@ jobs:
           b2 ${{ matrix.config }} -l500 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on deterministic-tests
 
       - name: run tests (flaky)
-        uses: nick-invision/retry@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
           retry_wait_seconds: 4
@@ -249,9 +279,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -275,6 +307,11 @@ jobs:
           cd simulation
           b2 debug-iterators=on invariant-checks=full asserts=on picker-debugging=on
 
+      - name: build simulations no deprecated
+        run: |
+          cd simulation
+          b2 testing.execute=off deprecated-functions=off
+
 
    dist:
       name: build dist
@@ -282,13 +319,15 @@ jobs:
 
       strategy:
          matrix:
-            os: [ubuntu-20.04 ]
+            os: [ubuntu-20.04, ubuntu-22.04]
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true
@@ -305,16 +344,16 @@ jobs:
       - name: install dependencies
         run: |
           sudo apt install libboost-tools-dev libboost-python-dev libboost-dev libboost-system-dev
-          sudo apt install python-docutils python-pygments python-pil gsfonts inkscape icoutils graphviz hunspell imagemagick python3-setuptools
+          sudo apt install python3-docutils python3-pygments python3-pil gsfonts inkscape icoutils graphviz hunspell imagemagick python3-setuptools
           python3 -m pip install aafigure
           echo "using gcc ;" >>~/user-config.jam
 
       - name: build tarball
         run: AAFIGURE=~/.local/bin/aafigure RST2HTML=rst2html make dist
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
-          name: tarball
+          name: tarball-${{ matrix.os }}
           path: libtorrent-rasterbar-*.tar.gz
 
       - name: test-tarball (b2 install)

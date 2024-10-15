@@ -24,6 +24,8 @@
 #include "libtorrent/pex_flags.hpp"
 #include "libtorrent/string_view.hpp"
 #include "libtorrent/storage_defs.hpp"
+#include "libtorrent/kademlia/announce_flags.hpp"
+#include "libtorrent/write_resume_data.hpp"
 #include <vector>
 #include <map>
 
@@ -70,7 +72,7 @@ struct tuple_to_endpoint
 
         object o(borrowed(x));
         data->convertible = new (storage) T(lt::make_address(
-           extract<std::string>(o[0])), extract<std::uint16_t>(o[1]));
+           static_cast<std::string>(extract<std::string>(o[0]))), extract<std::uint16_t>(o[1]));
     }
 };
 
@@ -452,7 +454,9 @@ void bind_converters()
     to_python_converter<lt::create_flags_t, from_bitfield_flag<lt::create_flags_t>>();
     to_python_converter<lt::pex_flags_t, from_bitfield_flag<lt::pex_flags_t>>();
     to_python_converter<lt::reannounce_flags_t, from_bitfield_flag<lt::reannounce_flags_t>>();
+    to_python_converter<lt::dht::announce_flags_t, from_bitfield_flag<lt::dht::announce_flags_t>>();
     to_python_converter<lt::file_progress_flags_t, from_bitfield_flag<lt::file_progress_flags_t>>();
+    to_python_converter<lt::write_torrent_flags_t, from_bitfield_flag<lt::write_torrent_flags_t>>();
     to_python_converter<lt::string_view, from_string_view>();
 
     // work-around types
@@ -547,7 +551,9 @@ void bind_converters()
     to_bitfield_flag<lt::create_flags_t>();
     to_bitfield_flag<lt::pex_flags_t>();
     to_bitfield_flag<lt::reannounce_flags_t>();
+    to_bitfield_flag<lt::dht::announce_flags_t>();
     to_string_view();
     to_bitfield_flag<lt::session_flags_t>();
     to_bitfield_flag<lt::file_progress_flags_t>();
+    to_bitfield_flag<lt::write_torrent_flags_t>();
 }

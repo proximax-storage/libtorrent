@@ -1,11 +1,11 @@
 /*
 
 Copyright (c) 2007, Un Shyam
-Copyright (c) 2006-2020, Arvid Norberg
-Copyright (c) 2016, Pavel Pimenov
+Copyright (c) 2006-2020, 2022, Arvid Norberg
 Copyright (c) 2016-2017, Alden Torres
-Copyright (c) 2018-2019, Steven Siloti
+Copyright (c) 2016, Pavel Pimenov
 Copyright (c) 2018, Greg Hazel
+Copyright (c) 2018-2019, Steven Siloti
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -383,6 +383,10 @@ namespace libtorrent {
 #endif // SIRIUS_DRIVE
 	private:
 
+#if !defined TORRENT_DISABLE_ENCRYPTION
+		void init_bt_handshake();
+#endif
+
 		enum class state_t : std::uint8_t
 		{
 #if !defined TORRENT_DISABLE_ENCRYPTION
@@ -393,7 +397,6 @@ namespace libtorrent {
 			read_pe_cryptofield,
 			read_pe_pad,
 			read_pe_ia,
-			init_bt_handshake,
 #endif
 			read_protocol_identifier,
 			read_info_hash,

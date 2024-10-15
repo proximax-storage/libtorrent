@@ -1,7 +1,7 @@
 /*
 
-Copyright (c) 2003-2004, 2006-2010, 2012, 2014-2020, Arvid Norberg
-Copyright (c) 2016-2017, Alden Torres
+Copyright (c) 2003-2004, 2006-2010, 2012, 2014-2022, Arvid Norberg
+Copyright (c) 2017, Alden Torres
 Copyright (c) 2018, Alexandre Janniaux
 All rights reserved.
 
@@ -158,7 +158,7 @@ struct udp : boost::asio::ip::udp {
 #ifdef IPV6_TCLASS
 	struct traffic_class
 	{
-		explicit traffic_class(char val): m_value(val) {}
+		explicit traffic_class(int val): m_value(val) {}
 		template<class Protocol>
 		int level(Protocol const&) const { return IPPROTO_IPV6; }
 		template<class Protocol>
@@ -178,7 +178,7 @@ struct udp : boost::asio::ip::udp {
 #else
 		using tos_t = int;
 #endif
-		explicit type_of_service(char val) : m_value(tos_t(val)) {}
+		explicit type_of_service(tos_t const val) : m_value(tos_t(val)) {}
 		template<class Protocol>
 		int level(Protocol const&) const { return IPPROTO_IP; }
 		template<class Protocol>
@@ -189,6 +189,22 @@ struct udp : boost::asio::ip::udp {
 		size_t size(Protocol const&) const { return sizeof(m_value); }
 		tos_t m_value;
 	};
+
+#ifdef IP_DSCP_TRAFFIC_TYPE
+	struct dscp_traffic_type
+	{
+		explicit dscp_traffic_type(DWORD val) : m_value(val) {}
+		template<class Protocol>
+		int level(Protocol const&) const { return IP_DSCP_TRAFFIC_TYPE; }
+		template<class Protocol>
+		int name(Protocol const&) const { return DSCP_TRAFFIC_TYPE; }
+		template<class Protocol>
+		DWORD const* data(Protocol const&) const { return &m_value; }
+		template<class Protocol>
+		size_t size(Protocol const&) const { return sizeof(m_value); }
+		DWORD m_value;
+	};
+#endif
 
 #if defined IP_DONTFRAG || defined IP_MTU_DISCOVER || defined IP_DONTFRAGMENT
 #define TORRENT_HAS_DONT_FRAGMENT

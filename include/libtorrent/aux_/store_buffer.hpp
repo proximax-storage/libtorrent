@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2016, 2020, Arvid Norberg
+Copyright (c) 2016, 2020, 2022, Arvid Norberg
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -130,6 +130,11 @@ struct store_buffer
 		auto it = m_store_buffer.find(loc);
 		TORRENT_ASSERT(it != m_store_buffer.end());
 		m_store_buffer.erase(it);
+	}
+
+	std::size_t size() const
+	{
+		return m_store_buffer.size();
 	}
 
 private:

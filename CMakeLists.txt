@@ -70,6 +70,7 @@ set(libtorrent_include_files
 	extensions.hpp
 	file.hpp
 	file_storage.hpp
+	file_layout.hpp
 	fingerprint.hpp
 	flags.hpp
 	fwd.hpp
@@ -160,6 +161,7 @@ set(libtorrent_include_files
 	torrent_peer_allocator.hpp
 	torrent_status.hpp
 	tracker_manager.hpp
+	truncate.hpp
 	udp_socket.hpp
 	udp_tracker_connection.hpp
 	union_endpoint.hpp
@@ -211,7 +213,6 @@ set(libtorrent_extensions_include_files
 
 set(libtorrent_aux_include_files
 	alert_manager.hpp
-	aligned_storage.hpp
 	aligned_union.hpp
 	alloca.hpp
 	allocating_handler.hpp
@@ -234,14 +235,16 @@ set(libtorrent_aux_include_files
 	disable_warnings_pop.hpp
 	disable_warnings_push.hpp
 	disk_buffer_pool.hpp
-	disk_io_job.hpp
+	mmap_disk_job.hpp
 	disk_io_thread_pool.hpp
 	disk_job_fence.hpp
 	disk_job_pool.hpp
+	drive_info.hpp
 	ed25519.hpp
 	escape_string.hpp
 	export.hpp
 	ffs.hpp
+	file_descriptor.hpp
 	file_progress.hpp
 	file_view_pool.hpp
 	has_block.hpp
@@ -256,6 +259,7 @@ set(libtorrent_aux_include_files
 	lsd.hpp
 	merkle.hpp
 	merkle_tree.hpp
+	netlink_utils.hpp
 	noexcept_movable.hpp
 	numeric_cast.hpp
 	packet_buffer.hpp
@@ -277,6 +281,8 @@ set(libtorrent_aux_include_files
 	session_settings.hpp
 	session_udp_sockets.hpp
 	set_socket_buffer.hpp
+	set_traffic_class.hpp
+	set_traffic_class.hpp
 	socket_type.hpp
 	storage_free_list.hpp
 	storage_utils.hpp
@@ -293,6 +299,7 @@ set(libtorrent_aux_include_files
 	utp_stream.hpp
 	vector.hpp
 	win_crypto_provider.hpp
+	win_file_handle.hpp
 	win_util.hpp
 )
 
@@ -320,6 +327,7 @@ set(sources
 	chained_buffer.cpp
 	choker.cpp
 	close_reason.cpp
+	copy_file.cpp
 	cpuid.cpp
 	crc32c.cpp
 	create_torrent.cpp
@@ -328,10 +336,10 @@ set(sources
 	disk_buffer_holder.cpp
 	disk_buffer_pool.cpp
 	disk_interface.cpp
-	disk_io_job.cpp
 	disk_io_thread_pool.cpp
 	disk_job_fence.cpp
 	disk_job_pool.cpp
+	drive_info.cpp
 	entry.cpp
 	enum_net.cpp
 	error_code.cpp
@@ -359,12 +367,14 @@ set(sources
 	ip_notifier.cpp
 	ip_voter.cpp
 	listen_socket_handle.cpp
+	load_torrent.cpp
 	lsd.cpp
 	magnet_uri.cpp
 	merkle.cpp
 	merkle_tree.cpp
 	mmap.cpp
 	mmap_disk_io.cpp
+	mmap_disk_job.cpp
 	mmap_storage.cpp
 	natpmp.cpp
 	packet_buffer.cpp
@@ -421,6 +431,7 @@ set(sources
 	torrent_peer_allocator.cpp
 	torrent_status.cpp
 	tracker_manager.cpp
+	truncate.cpp
 	udp_socket.cpp
 	udp_tracker_connection.cpp
 	upnp.cpp
@@ -500,6 +511,7 @@ list(TRANSFORM sirius_drive PREPEND "include/sirius_drive/")
 feature_option(TORRENT_SHARED_LIB "build libtorrent as a shared library" ON)
 feature_option(static_runtime "build libtorrent with static runtime" OFF)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_public_dependency(Threads REQUIRED)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
@@ -513,27 +525,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES Clang)
 		-Wno-exit-time-destructors
 		-Wno-weak-vtables
 		-Wno-return-std-move-in-c++11
+		-Wno-unsafe-buffer-usage
 		-Wno-unknown-warning-option
 	)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES GNU)
 	add_compile_options(
 		-Wall
-		-Wc++11-compat
 		-Wextra
-		-Wno-format-zero-length
-		-Wparentheses
 		-Wpedantic
 		-Wvla
-		-Wno-c++11-compat
-		-Wno-format-zero-length
 		-Wno-noexcept-type
+		-Wno-format-zero-length
 		-ftemplate-depth=512
 		-O2
 	)
 elseif(MSVC)
 	add_compile_options(
-		# https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
-		/Zc:__cplusplus
 		/W4
 		# C4251: 'identifier' : class 'type' needs to have dll-interface to be
 		#        used by clients of class 'type2'
@@ -624,12 +631,19 @@ target_compile_definitions(torrent-sirius
 		BOOST_ASIO_NO_DEPRECATED
 	PRIVATE
 		TORRENT_BUILDING_LIBRARY
-		_FILE_OFFSET_BITS=64
 		BOOST_EXCEPTION_DISABLE
 		BOOST_ASIO_HAS_STD_CHRONO
 )
 
 target_link_libraries(torrent-sirius
+# if (NOT WIN32)
+# 	target_compile_definitions(torrent-rasterbar
+# 		PRIVATE
+# 			_FILE_OFFSET_BITS=64
+# 	)
+# endif()
+
+# target_link_libraries(torrent-rasterbar
 	PUBLIC
 		Threads::Threads
 )
@@ -642,7 +656,7 @@ if (WIN32)
 			debug dbghelp crypt32
 	)
 
-	add_definitions(-D_WIN32_WINNT=0x0600) # target Windows Vista or later
+	add_definitions(-D_WIN32_WINNT=0x0A00) # target Windows 10 or later
 
 	target_compile_definitions(torrent-sirius
 		PUBLIC WIN32_LEAN_AND_MEAN # prevent winsock1 to be included
@@ -656,9 +670,14 @@ if (WIN32)
 		)
 		target_compile_options(torrent-sirius
 			PRIVATE
-				/Zc:wchar_t /Zc:forScope # these compiler settings just make the compiler standard conforming
-				/MP # for multi-core compilation
-				/bigobj # increase the number of sections for obj files
+				# allow larger .obj files (with more sections)
+				/bigobj
+				# https://learn.microsoft.com/en-us/cpp/build/reference/permissive-standards-conformance?view=msvc-170
+				/permissive-
+				# https://docs.microsoft.com/en-us/cpp/build/reference/utf-8-set-source-and-executable-character-sets-to-utf-8?view=msvc-170
+				/utf-8
+				# https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
+				/Zc:__cplusplus
 		)
 		set_target_properties(torrent-sirius PROPERTIES LINK_FLAGS_RELEASE "/OPT:ICF=5 /OPT:REF")
 	endif()
@@ -694,6 +713,7 @@ if (NOT Windows)
 			return 0;
 		}
 	]=])
+	string(REPLACE "std::atomic<int>" "std::atomic<std::int8_t>" ATOMICS8_TEST_SOURCE "${ATOMICS_TEST_SOURCE}")
 	string(REPLACE "std::atomic<int>" "std::atomic<std::int64_t>" ATOMICS64_TEST_SOURCE "${ATOMICS_TEST_SOURCE}")
 
 	if(APPLE)
@@ -701,10 +721,12 @@ if (NOT Windows)
 	endif()
 
 	check_cxx_source_compiles("${ATOMICS_TEST_SOURCE}" HAVE_CXX_ATOMICS_WITHOUT_LIB)
+	check_cxx_source_compiles("${ATOMICS8_TEST_SOURCE}" HAVE_CXX_ATOMICS8_WITHOUT_LIB)
 	check_cxx_source_compiles("${ATOMICS64_TEST_SOURCE}" HAVE_CXX_ATOMICS64_WITHOUT_LIB)
-	if((NOT HAVE_CXX_ATOMICS_WITHOUT_LIB) OR (NOT HAVE_CXX_ATOMICS64_WITHOUT_LIB))
+	if((NOT HAVE_CXX_ATOMICS_WITHOUT_LIB) OR (NOT HAVE_CXX_ATOMICS8_WITHOUT_LIB) OR (NOT HAVE_CXX_ATOMICS64_WITHOUT_LIB))
 		set(CMAKE_REQUIRED_LIBRARIES "atomic")
 		check_cxx_source_compiles("${ATOMICS_TEST_SOURCE}" HAVE_CXX_ATOMICS_WITH_LIB)
+		check_cxx_source_compiles("${ATOMICS8_TEST_SOURCE}" HAVE_CXX_ATOMICS8_WITH_LIB)
 		check_cxx_source_compiles("${ATOMICS64_TEST_SOURCE}" HAVE_CXX_ATOMICS64_WITH_LIB)
 		if ( (NOT APPLE) AND ((NOT HAVE_CXX_ATOMICS_WITH_LIB) OR (NOT HAVE_CXX_ATOMICS64_WITH_LIB)))
 			message(FATAL_ERROR "No native support for std::atomic, or libatomic not found!")

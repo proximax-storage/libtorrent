@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2014-2020, Arvid Norberg
+Copyright (c) 2014-2022, Arvid Norberg
 Copyright (c) 2017-2018, Steven Siloti
 Copyright (c) 2018, Alden Torres
 All rights reserved.
@@ -116,6 +116,9 @@ namespace file_open_mode {
 	// while it's still being held open by this handle
 	constexpr file_open_mode_t locked TORRENT_DEPRECATED = 6_bit;
 #endif
+
+	// the file is memory mapped
+	constexpr file_open_mode_t mmapped = 7_bit;
 }
 
 	// this contains information about a file that's currently open by the
@@ -172,6 +175,10 @@ namespace file_open_mode {
 		// If this flag is not set in the async_hash() call, the SHA-1 piece
 		// hash does not need to be computed.
 		static constexpr disk_job_flags_t v1_hash = 5_bit;
+
+		// this flag instructs a hash job that we just completed this piece, and
+		// it should be flushed to disk
+		static constexpr disk_job_flags_t flush_piece = 7_bit;
 
 		// this is called when a new torrent is added. The shared_ptr can be
 		// used to hold the internal torrent object alive as long as there are

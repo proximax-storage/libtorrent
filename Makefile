@@ -1,4 +1,4 @@
-VERSION=2.0.4
+VERSION=2.0.11
 
 BUILD_CONFIG=release link=shared crypto=openssl warnings=off address-model=64
 
@@ -165,6 +165,7 @@ ED25519_SOURCE = \
 EXTRA_DIST = \
   Jamfile \
   Jamroot.jam \
+  project-config.jam \
   Makefile \
   CMakeLists.txt \
   cmake/Modules/FindLibGcrypt.cmake \
@@ -206,6 +207,7 @@ PYTHON_FILES= \
   src/fingerprint.cpp       \
   src/gil.hpp               \
   src/ip_filter.cpp         \
+  src/load_torrent.cpp      \
   src/magnet_uri.cpp        \
   src/module.cpp            \
   src/optional.hpp          \
@@ -228,11 +230,13 @@ EXAMPLE_FILES= \
   bt-get.cpp \
   bt-get2.cpp \
   bt-get3.cpp \
+  check_files.cpp \
   client_test.cpp \
   cmake/FindLibtorrentRasterbar.cmake \
   connection_tester.cpp \
   dump_torrent.cpp \
   dump_bdecode.cpp \
+  magnet2torrent.cpp \
   make_torrent.cpp \
   print.cpp \
   print.hpp \
@@ -241,6 +245,7 @@ EXAMPLE_FILES= \
   simple_client.cpp \
   custom_storage.cpp \
   stats_counters.cpp \
+  torrent2magnet.cpp \
   torrent_view.cpp \
   torrent_view.hpp \
   upnp_test.cpp
@@ -298,6 +303,7 @@ SOURCES = \
   chained_buffer.cpp              \
   choker.cpp                      \
   close_reason.cpp                \
+  copy_file.cpp                   \
   cpuid.cpp                       \
   crc32c.cpp                      \
   create_torrent.cpp              \
@@ -306,10 +312,10 @@ SOURCES = \
   disk_buffer_holder.cpp          \
   disk_buffer_pool.cpp            \
   disk_interface.cpp              \
-  disk_io_job.cpp                 \
   disk_io_thread_pool.cpp         \
   disk_job_fence.cpp              \
   disk_job_pool.cpp               \
+  drive_info.cpp                  \
   entry.cpp                       \
   enum_net.cpp                    \
   error_code.cpp                  \
@@ -337,12 +343,14 @@ SOURCES = \
   ip_notifier.cpp                 \
   ip_voter.cpp                    \
   listen_socket_handle.cpp        \
+  load_torrent.cpp                \
   lsd.cpp                         \
   magnet_uri.cpp                  \
   merkle.cpp                      \
   merkle_tree.cpp                 \
   mmap.cpp                        \
   mmap_disk_io.cpp                \
+  mmap_disk_job.cpp               \
   mmap_storage.cpp                \
   natpmp.cpp                      \
   packet_buffer.cpp               \
@@ -401,6 +409,7 @@ SOURCES = \
   torrent_peer_allocator.cpp      \
   torrent_status.cpp              \
   tracker_manager.cpp             \
+  truncate.cpp                    \
   udp_socket.cpp                  \
   udp_tracker_connection.cpp      \
   upnp.cpp                        \
@@ -448,6 +457,7 @@ HEADERS = \
   extensions.hpp               \
   file.hpp                     \
   file_storage.hpp             \
+  file_layout.hpp              \
   fingerprint.hpp              \
   flags.hpp                    \
   fwd.hpp                      \
@@ -471,6 +481,7 @@ HEADERS = \
   ip_voter.hpp                 \
   libtorrent.hpp               \
   link.hpp                     \
+  load_torrent.hpp             \
   lsd.hpp                      \
   magnet_uri.hpp               \
   mmap_disk_io.hpp             \
@@ -543,6 +554,7 @@ HEADERS = \
   torrent_peer_allocator.hpp   \
   torrent_status.hpp           \
   tracker_manager.hpp          \
+  truncate.hpp                 \
   udp_socket.hpp               \
   udp_tracker_connection.hpp   \
   union_endpoint.hpp           \
@@ -557,7 +569,6 @@ HEADERS = \
   xml_parse.hpp                \
   \
   aux_/alert_manager.hpp            \
-  aux_/aligned_storage.hpp          \
   aux_/aligned_union.hpp            \
   aux_/alloca.hpp                   \
   aux_/allocating_handler.hpp       \
@@ -583,14 +594,15 @@ HEADERS = \
   aux_/disable_warnings_pop.hpp     \
   aux_/disable_warnings_push.hpp    \
   aux_/disk_buffer_pool.hpp         \
-  aux_/disk_io_job.hpp              \
   aux_/disk_io_thread_pool.hpp      \
   aux_/disk_job_fence.hpp           \
   aux_/disk_job_pool.hpp            \
+  aux_/drive_info.hpp               \
   aux_/ed25519.hpp                  \
   aux_/escape_string.hpp            \
   aux_/export.hpp                   \
   aux_/ffs.hpp                      \
+  aux_/file_descriptor.hpp          \
   aux_/file_pointer.hpp             \
   aux_/file_progress.hpp            \
   aux_/file_view_pool.hpp           \
@@ -609,6 +621,8 @@ HEADERS = \
   aux_/merkle.hpp                   \
   aux_/merkle_tree.hpp              \
   aux_/mmap.hpp                     \
+  aux_/mmap_disk_job.hpp            \
+  aux_/netlink_utils.hpp            \
   aux_/noexcept_movable.hpp         \
   aux_/numeric_cast.hpp             \
   aux_/open_mode.hpp                \
@@ -633,6 +647,7 @@ HEADERS = \
   aux_/session_settings.hpp         \
   aux_/session_udp_sockets.hpp      \
   aux_/set_socket_buffer.hpp        \
+  aux_/set_traffic_class.hpp        \
   aux_/sha512.hpp                   \
   aux_/socket_type.hpp              \
   aux_/storage_free_list.hpp        \
@@ -653,6 +668,7 @@ HEADERS = \
   aux_/windows.hpp                  \
   aux_/win_cng.hpp                  \
   aux_/win_crypto_provider.hpp      \
+  aux_/win_file_handle.hpp          \
   aux_/win_util.hpp                 \
   \
   extensions/smart_ban.hpp          \
@@ -759,8 +775,13 @@ SIM_SOURCES = \
   test_torrent_status.cpp \
   test_tracker.cpp \
   test_transfer.cpp \
+  test_transfer_full_invalid_files.cpp \
+  test_transfer_no_files.cpp \
+  test_transfer_partial_valid_files.cpp \
   test_utp.cpp \
   test_web_seed.cpp \
+  transfer_sim.hpp \
+  transfer_sim.cpp \
   utils.cpp \
   utils.hpp
 
@@ -835,6 +856,7 @@ TEST_SOURCES = \
   test_bloom_filter.cpp \
   test_buffer.cpp \
   test_checking.cpp \
+  test_copy_file.cpp \
   test_crc32.cpp \
   test_create_torrent.cpp \
   test_dht.cpp \
@@ -891,6 +913,7 @@ TEST_SOURCES = \
   test_session_params.cpp \
   test_settings_pack.cpp \
   test_sha1_hash.cpp \
+  test_similar_torrent.cpp \
   test_sliding_average.cpp \
   test_socket_io.cpp \
   test_span.cpp \
@@ -909,6 +932,7 @@ TEST_SOURCES = \
   test_torrent_info.cpp \
   test_torrent_list.cpp \
   test_tracker.cpp \
+  test_truncate.cpp \
   test_transfer.cpp \
   test_upnp.cpp \
   test_url_seed.cpp \
@@ -959,7 +983,10 @@ TEST_TORRENTS = \
   backslash_path.torrent \
   bad_name.torrent \
   base.torrent \
+  collection.torrent \
+  collection2.torrent \
   creation_date.torrent \
+  dht_nodes.torrent \
   duplicate_files.torrent \
   duplicate_web_seeds.torrent \
   empty_httpseed.torrent \
@@ -984,6 +1011,7 @@ TEST_TORRENTS = \
   invalid_pieces.torrent \
   invalid_symlink.torrent \
   large.torrent \
+  large_piece_size.torrent \
   long_name.torrent \
   many_pieces.torrent \
   missing_path_list.torrent \
@@ -999,6 +1027,8 @@ TEST_TORRENTS = \
   pad_file_no_path.torrent \
   parent_path.torrent \
   sample.torrent \
+  similar.torrent \
+  similar2.torrent \
   single_multi_file.torrent \
   slash_path.torrent \
   slash_path2.torrent \
@@ -1019,6 +1049,7 @@ TEST_TORRENTS = \
   url_seed_multi_space_nolist.torrent \
   whitespace_url.torrent \
   v2.torrent \
+  v2_empty_file.torrent \
   v2_multipiece_file.torrent \
   v2_only.torrent \
   v2_invalid_filename.torrent \
@@ -1031,7 +1062,9 @@ TEST_TORRENTS = \
   v2_incomplete_piece_layer.torrent \
   v2_invalid_pad_file.torrent \
   v2_invalid_piece_layer.torrent \
+  v2_invalid_piece_layer_root.torrent \
   v2_invalid_piece_layer_size.torrent \
+  v2_unknown_piece_layer_entry.torrent \
   v2_multiple_files.torrent \
   v2_bad_file_alignment.torrent \
   v2_unordered_files.torrent \
@@ -1045,6 +1078,7 @@ TEST_TORRENTS = \
   v2_zero_root.torrent \
   v2_zero_root_small.torrent \
   v2_hybrid.torrent \
+  v2_hybrid-missing-tailpad.torrent \
   v2_invalid_root_hash.torrent \
   zero.torrent \
   zero2.torrent
@@ -1068,7 +1102,6 @@ TEST_EXTRA = Jamfile \
   root2.xml                          \
   root3.xml                          \
   ssl/regenerate_test_certificate.sh \
-  ssl/cert_request.pem               \
   ssl/dhparams.pem                   \
   ssl/invalid_peer_certificate.pem   \
   ssl/invalid_peer_private_key.pem   \

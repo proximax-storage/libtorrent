@@ -1,9 +1,9 @@
 /*
 
-Copyright (c) 2003-2009, 2011, 2013-2020, Arvid Norberg
+Copyright (c) 2003-2009, 2011, 2013-2022, Arvid Norberg
 Copyright (c) 2003, Daniel Wallin
 Copyright (c) 2016, Vladimir Golovnev
-Copyright (c) 2017-2018, Alden Torres
+Copyright (c) 2017, Alden Torres
 Copyright (c) 2017, 2019, Steven Siloti
 Copyright (c) 2018, d-komarov
 All rights reserved.
@@ -52,10 +52,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/disable_warnings_push.hpp"
 #include <boost/optional.hpp>
 
-#if TORRENT_HAS_SYMLINK
-#include <unistd.h> // for symlink()
-#endif
-
 #include "libtorrent/aux_/disable_warnings_pop.hpp"
 
 #include "libtorrent/mmap_storage.hpp"
@@ -64,13 +60,52 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/invariant_check.hpp"
 #include "libtorrent/aux_/session_impl.hpp"
 #include "libtorrent/aux_/file_view_pool.hpp"
-#include "libtorrent/disk_buffer_holder.hpp"
+#include "libtorrent/aux_/drive_info.hpp"
 #include "libtorrent/stat_cache.hpp"
 #include "libtorrent/hex.hpp" // to_hex
+#include "libtorrent/aux_/scope_end.hpp"
 
 #if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 
 namespace libtorrent {
+
+namespace {
+
+error_code translate_error(std::error_code const& err, bool const write)
+{
+	// We don't really know why we failed to read or write. SIGBUS essentially
+	// means I/O failure. We assume that if we were writing, the failure was
+	// because of disk full
+	if (write)
+	{
+#ifdef TORRENT_WINDOWS
+		if (err == std::error_code(sig::seh_errors::in_page_error))
+			return error_code(boost::system::errc::no_space_on_device, generic_category());
+#else
+		if (err == std::error_code(sig::errors::bus))
+			return error_code(boost::system::errc::no_space_on_device, generic_category());
+#endif
+	}
+
+#if BOOST_VERSION >= 107700
+
+#ifdef TORRENT_WINDOWS
+	if (err == std::error_code(sig::seh_errors::in_page_error))
+		return error_code(boost::system::errc::io_error, generic_category());
+#else
+	if (err == std::error_code(sig::errors::bus))
+		return error_code(boost::system::errc::io_error, generic_category());
+#endif
+
+	return err;
+#else
+
+	return error_code(boost::system::errc::io_error, generic_category());
+
+#endif
+}
+} // namespace
+
 
 	mmap_storage::mmap_storage(storage_params const& params
 		, aux::file_view_pool& pool)
@@ -127,33 +162,63 @@ namespace libtorrent {
 
 			download_priority_t const old_prio = m_file_priority[i];
 			download_priority_t new_prio = prio[i];
+
+			m_file_priority[i] = new_prio;
+
+			// in case there's an error, we make sure m_file_priority is only
+			// updated for the successful files. By leaving failed files as
+			// priority 0, we allow re-trying them.
+			auto restore_prio = aux::scope_end([&] {
+				m_file_priority[i] = old_prio;
+				prio = m_file_priority;
+			});
+
 			if (old_prio == dont_download && new_prio != dont_download)
 			{
 				// move stuff out of the part file
-				boost::optional<aux::file_view> f = open_file(sett, i, aux::open_mode::write, ec);
-				if (ec)
-				{
-					prio = m_file_priority;
-					return;
-				}
+				std::shared_ptr<aux::file_mapping> f = open_file(sett, i, aux::open_mode::write, ec);
+				if (ec) return;
 
 				if (m_part_file && use_partfile(i))
 				{
-					m_part_file->export_file([&f](std::int64_t file_offset, span<char> buf)
+					try
 					{
-						auto file_range = f->range().subspan(std::ptrdiff_t(file_offset));
-						TORRENT_ASSERT(file_range.size() >= buf.size());
-						sig::try_signal([&]{
-							std::memcpy(const_cast<char*>(file_range.data()), buf.data()
-								, static_cast<std::size_t>(buf.size()));
-							});
-					}, fs.file_offset(i), fs.file_size(i), ec.ec);
+						m_part_file->export_file([&f](std::int64_t file_offset, span<char> buf) {
+							if (!f->has_memory_map())
+							{
+								lt::error_code err;
+								aux::pwrite_all(f->fd(), buf, file_offset, err);
+								if (err) throw lt::system_error(err);
+								return;
+							}
 
-					if (ec)
+							auto file_range = f->range().subspan(std::ptrdiff_t(file_offset));
+							TORRENT_ASSERT(file_range.size() >= buf.size());
+							sig::try_signal([&]{
+								std::memcpy(const_cast<char*>(file_range.data()), buf.data()
+									, static_cast<std::size_t>(buf.size()));
+								});
+						}, fs.file_offset(i), fs.file_size(i), ec.ec);
+
+						if (ec)
+						{
+							ec.file(i);
+							ec.operation = operation_t::partfile_write;
+							return;
+						}
+					}
+					catch (std::system_error const& err)
 					{
 						ec.file(i);
 						ec.operation = operation_t::partfile_write;
-						prio = m_file_priority;
+						ec.ec = translate_error(err.code(), true);
+						return;
+					}
+					catch (lt::system_error const& err)
+					{
+						ec.file(i);
+						ec.operation = operation_t::partfile_write;
+						ec.ec = err.code();
 						return;
 					}
 				}
@@ -165,23 +230,19 @@ namespace libtorrent {
 				// so we just don't use a partfile for this file
 
 				std::string const fp = fs.file_path(i, m_save_path);
-				if (exists(fp, ec.ec)) use_partfile(i, false);
+				bool const file_exists = exists(fp, ec.ec);
 				if (ec.ec)
 				{
 					ec.file(i);
 					ec.operation = operation_t::file_stat;
-					prio = m_file_priority;
 					return;
 				}
+				use_partfile(i, !file_exists);
 /*
 				auto f = open_file(sett, i, aux::open_mode::read_only, ec);
 				if (ec.ec != boost::system::errc::no_such_file_or_directory)
 				{
-					if (ec)
-					{
-						prio = m_file_priority;
-						return;
-					}
+					if (ec) return;
 
 					need_partfile();
 
@@ -190,7 +251,6 @@ namespace libtorrent {
 					{
 						ec.file(i);
 						ec.operation = operation_t::partfile_read;
-						prio = m_file_priority;
 						return;
 					}
 					// remove the file
@@ -200,14 +260,13 @@ namespace libtorrent {
 					{
 						ec.file(i);
 						ec.operation = operation_t::file_remove;
-						prio = m_file_priority;
 						return;
 					}
 				}
 */
 			}
 			ec.ec.clear();
-			m_file_priority[i] = new_prio;
+			restore_prio.disarm();
 
 			if (m_file_priority[i] == dont_download && use_partfile(i))
 			{
@@ -231,28 +290,41 @@ namespace libtorrent {
 
 	void mmap_storage::use_partfile(file_index_t const index, bool const b)
 	{
-		if (index >= m_use_partfile.end_index()) m_use_partfile.resize(static_cast<int>(index) + 1, true);
+		if (index >= m_use_partfile.end_index())
+		{
+			// no need to extend this array if we're just setting it to "true",
+			// that's default already
+			if (b) return;
+			m_use_partfile.resize(static_cast<int>(index) + 1, true);
+		}
 		m_use_partfile[index] = b;
 	}
 
-	void mmap_storage::initialize(settings_interface const& sett, storage_error& ec)
+	status_t mmap_storage::initialize(settings_interface const& sett, storage_error& ec)
 	{
 		m_stat_cache.reserve(files().num_files());
 
-#ifdef TORRENT_WINDOWS
-		// don't do full file allocations on network drives
-		auto const file_name = convert_to_native_path_string(m_save_path);
-		int const drive_type = GetDriveTypeW(file_name.c_str());
-
-		if (drive_type == DRIVE_REMOTE)
+		auto const di = aux::get_drive_info(m_save_path);
+		if (di == aux::drive_info::remote)
+		{
+			// don't do full file allocations on network drives
 			m_allocate_files = false;
-#endif
+		}
+
+		switch (sett.get_int(settings_pack::disk_write_mode))
+		{
+			case settings_pack::always_pwrite: m_use_mmap_writes = false; break;
+			case settings_pack::always_mmap_write: m_use_mmap_writes = true; break;
+			case settings_pack::auto_mmap_write: m_use_mmap_writes = (di == aux::drive_info::ssd_dax); break;
+		}
+
 		{
 			std::unique_lock<std::mutex> l(m_file_created_mutex);
 			m_file_created.resize(files().num_files(), false);
 		}
 
 		file_storage const& fs = files();
+		status_t ret{};
 		// if some files have priority 0, we need to check if they exist on the
 		// filesystem, in which case we won't use a partfile for them.
 		// this is to be backwards compatible with previous versions of
@@ -262,112 +334,34 @@ namespace libtorrent {
 			if (m_file_priority[i] != dont_download || fs.pad_file_at(i))
 				continue;
 
-			file_status s;
-			std::string const file_path = fs.file_path(i, m_save_path);
 			error_code err;
-			stat_file(file_path, &s, err);
-			if (!err)
+			auto const size = m_stat_cache.get_filesize(i, fs, m_save_path, err);
+			if (!err && size > 0)
 			{
 				use_partfile(i, false);
+				if (size > fs.file_size(i))
+					ret = ret | status_t::oversized_file;
 			}
 			else
 			{
+				// we may have earlier determined we *can't* use a partfile for
+				// this file, we need to be able to change our mind in case the
+				// file disappeared
+				use_partfile(i, true);
 				need_partfile();
 			}
 		}
-		// first, create zero-sized files
-		for (auto const file_index : fs.file_range())
-		{
-			// ignore files that have priority 0
-			if (m_file_priority.end_index() > file_index
-				&& m_file_priority[file_index] == dont_download)
-			{
-				continue;
-			}
 
-			// ignore pad files
-			if (fs.pad_file_at(file_index)) continue;
-
-			// this is just to see if the file exists
-			error_code err;
-			m_stat_cache.get_filesize(file_index, fs, m_save_path, err);
-
-			if (err && err != boost::system::errc::no_such_file_or_directory)
-			{
-				ec.file(file_index);
-				ec.operation = operation_t::file_stat;
-				ec.ec = err;
-				break;
-			}
-
-			// if the file is empty and doesn't already exist, create it
-			// deliberately don't truncate files that already exist
-			// if a file is supposed to have size 0, but already exists, we will
-			// never truncate it to 0.
-			if (fs.file_size(file_index) == 0)
-			{
-#if TORRENT_HAS_SYMLINK
-				// create symlinks
-				if (fs.file_flags(file_index) & file_storage::flag_symlink)
-				{
-					std::string path = fs.file_path(file_index, m_save_path);
-					create_directories(parent_path(path), ec.ec);
-					if (ec)
-					{
-						ec.ec = error_code(errno, generic_category());
-						ec.file(file_index);
-						ec.operation = operation_t::mkdir;
-						break;
-					}
-					// we make the symlink target relative to the link itself
-					std::string const target = lexically_relative(
-						parent_path(fs.file_path(file_index)), fs.symlink(file_index));
-					std::string const link = fs.file_path(file_index, m_save_path);
-					if (::symlink(target.c_str(), link.c_str()) != 0)
-					{
-						int const error = errno;
-						if (error == EEXIST)
-						{
-							// if the file exist, it may be a symlink already. if so,
-							// just verify the link target is what it's supposed to be
-							// note that readlink() does not null terminate the buffer
-							char buffer[512];
-							auto const ret = ::readlink(link.c_str(), buffer, sizeof(buffer));
-							if (ret <= 0 || target != string_view(buffer, std::size_t(ret)))
-							{
-								ec.ec = error_code(error, generic_category());
-								ec.file(file_index);
-								ec.operation = operation_t::symlink;
-								return;
-							}
-						}
-						else
-						{
-							ec.ec = error_code(error, generic_category());
-							ec.file(file_index);
-							ec.operation = operation_t::symlink;
-							return;
-						}
-					}
-				}
-				else
-#endif
-				if (err == boost::system::errc::no_such_file_or_directory)
-				{
-					// just creating the file is enough to make it zero-sized. If
-					// there's a race here and some other process truncates the file,
-					// it's not a problem, we won't access empty files ever again
-					ec.ec.clear();
-					auto f = open_file(sett, file_index, aux::open_mode::write
-						| aux::open_mode::random_access | aux::open_mode::truncate, ec);
-					if (ec) return;
-				}
-			}
-			ec.ec.clear();
-		}
+		aux::initialize_storage(fs, m_save_path, m_stat_cache, m_file_priority
+			, [&sett, this](file_index_t const file_index, storage_error& e)
+			{ open_file(sett, file_index, aux::open_mode::write, e); }
+			, aux::create_symlink
+			, [&ret](file_index_t, std::int64_t) { ret = ret | status_t::oversized_file; }
+			, ec);
 
 		// close files that were opened in write mode
 		m_pool.release(storage_index());
+		return ret;
 	}
 
 	bool mmap_storage::has_any_file(storage_error& ec)
@@ -384,14 +378,13 @@ namespace libtorrent {
 		if (!ec) return true;
 
 		// the part file not existing is expected
-		if (ec && ec.ec == boost::system::errc::no_such_file_or_directory)
+		if (ec.ec == boost::system::errc::no_such_file_or_directory)
 			ec.ec.clear();
 
 		if (ec)
 		{
 			ec.file(torrent_status::error_file_partfile);
 			ec.operation = operation_t::file_stat;
-			return false;
 		}
 		return false;
 	}
@@ -423,7 +416,7 @@ namespace libtorrent {
 			if (ec.ec)
 			{
 				ec.file(index);
-				ec.operation = operation_t::file_rename;
+				ec.operation = operation_t::mkdir;
 				return;
 			}
 
@@ -438,12 +431,11 @@ namespace libtorrent {
 			if (ec)
 			{
 				ec.ec.clear();
-				copy_file(old_name, new_path, ec.ec);
+				aux::copy_file(old_name, new_path, ec);
 
 				if (ec)
 				{
 					ec.file(index);
-					ec.operation = operation_t::file_rename;
 					return;
 				}
 
@@ -455,7 +447,7 @@ namespace libtorrent {
 		{
 			// if exists fails, report that error
 			ec.file(index);
-			ec.operation = operation_t::file_rename;
+			ec.operation = operation_t::file_stat;
 			return;
 		}
 
@@ -524,21 +516,23 @@ namespace libtorrent {
 		return { ret, m_save_path };
 	}
 
-	int mmap_storage::readv(settings_interface const& sett
-		, span<iovec_t const> bufs
+	int mmap_storage::read(settings_interface const& sett
+		, span<char> buffer
 		, piece_index_t const piece, int const offset
-		, aux::open_mode_t const flags, storage_error& error)
+		, aux::open_mode_t const mode
+		, disk_job_flags_t const flags
+		, storage_error& error)
 	{
 #ifdef TORRENT_SIMULATE_SLOW_READ
-		std::this_thread::sleep_for(seconds(1));
+		std::this_thread::sleep_for(milliseconds(rand() % 2000));
 #endif
-		return readwritev(files(), bufs, piece, offset, error
-			, [this, flags, &sett](file_index_t const file_index
+		return readwrite(files(), buffer, piece, offset, error
+			, [this, mode, flags, &sett](file_index_t const file_index
 				, std::int64_t const file_offset
-				, span<iovec_t const> vec, storage_error& ec)
+				, span<char> buf, storage_error& ec)
 		{
 			// reading from a pad file yields zeroes
-			if (files().pad_file_at(file_index)) return aux::read_zeroes(vec);
+			if (files().pad_file_at(file_index)) return aux::read_zeroes(buf);
 
 			if (file_index < m_file_priority.end_index()
 				&& m_file_priority[file_index] == dont_download
@@ -548,56 +542,62 @@ namespace libtorrent {
 
 				error_code e;
 				peer_request map = files().map_file(file_index, file_offset, 0);
-				int const ret = m_part_file->readv(vec, map.piece, map.start, e);
+				int const ret = m_part_file->read(buf, map.piece, map.start, e);
 
 				if (e)
 				{
 					ec.ec = e;
-					ec.file(file_index);
 					ec.operation = operation_t::partfile_read;
 					return -1;
 				}
 				return ret;
 			}
 
-			auto handle = open_file(sett, file_index, flags, ec);
+			auto handle = open_file(sett, file_index, mode, ec);
 			if (ec) return -1;
+			TORRENT_ASSERT(handle);
+
+			if (!handle->has_memory_map())
+				return aux::pread_all(handle->fd(), buf, file_offset, ec.ec);
 
 			int ret = 0;
-			error_code e;
 			span<byte const> file_range = handle->range();
-			if (file_range.size() > file_offset)
-			{
-				file_range = file_range.subspan(static_cast<std::ptrdiff_t>(file_offset));
-				for (auto buf : vec)
-				{
-					if (file_range.empty()) break;
-					if (file_range.size() < buf.size()) buf = buf.first(file_range.size());
-
-					sig::try_signal([&]{
-						std::memcpy(buf.data(), const_cast<char*>(file_range.data())
-							, static_cast<std::size_t>(buf.size()));
-					});
-
-					file_range = file_range.subspan(buf.size());
-					ret += static_cast<int>(buf.size());
-				}
-			}
 
 			// set this unconditionally in case the upper layer would like to treat
 			// short reads as errors
 			ec.operation = operation_t::file_read;
 
-			// we either get an error or 0 or more bytes read
-#ifndef SIRIUS_DRIVE_MULTI //(???)**
-			TORRENT_ASSERT(e || ret > 0);
-#endif
-			TORRENT_ASSERT(ret <= bufs_size(vec));
-
-			if (e)
+            // we either get an error or 0 or more bytes read
+            if (file_range.size() <= file_offset)
 			{
-				ec.ec = e;
-				ec.file(file_index);
+				ec.ec = boost::asio::error::eof;
+				return -1;
+			}
+
+			try
+			{
+				file_range = file_range.subspan(static_cast<std::ptrdiff_t>(file_offset));
+				if (!file_range.empty())
+				{
+					if (file_range.size() < buf.size()) buf = buf.first(file_range.size());
+
+					sig::try_signal([&]{
+						std::memcpy(buf.data(), const_cast<char*>(file_range.data())
+							, static_cast<std::size_t>(buf.size()));
+						});
+
+					if (flags & disk_interface::volatile_read)
+						handle->dont_need(file_range.first(buf.size()));
+					if (flags & disk_interface::flush_piece)
+						handle->page_out(file_range.first(buf.size()));
+
+					file_range = file_range.subspan(buf.size());
+					ret += static_cast<int>(buf.size());
+				}
+			}
+			catch (std::system_error const& err)
+			{
+				ec.ec = translate_error(err.code(), false);
 				return -1;
 			}
 
@@ -605,20 +605,25 @@ namespace libtorrent {
 		});
 	}
 
-	int mmap_storage::writev(settings_interface const& sett
-		, span<iovec_t const> bufs
+	int mmap_storage::write(settings_interface const& sett
+		, span<char> buffer
 		, piece_index_t const piece, int const offset
-		, aux::open_mode_t const flags, storage_error& error)
+		, aux::open_mode_t const mode
+		, disk_job_flags_t const flags
+		, storage_error& error)
 	{
-		return readwritev(files(), bufs, piece, offset, error
-			, [this, flags, &sett](file_index_t const file_index
+#ifdef TORRENT_SIMULATE_SLOW_WRITE
+		std::this_thread::sleep_for(milliseconds(rand() % 800));
+#endif
+		return readwrite(files(), buffer, piece, offset, error
+			, [this, mode, flags, &sett](file_index_t const file_index
 				, std::int64_t const file_offset
-				, span<iovec_t const> vec, storage_error& ec)
+				, span<char> buf, storage_error& ec)
 		{
 			if (files().pad_file_at(file_index))
 			{
 				// writing to a pad-file is a no-op
-				return bufs_size(vec);
+				return int(buf.size());
 			}
 
 			if (file_index < m_file_priority.end_index()
@@ -630,12 +635,11 @@ namespace libtorrent {
 				error_code e;
 				peer_request map = files().map_file(file_index
 					, file_offset, 0);
-				int const ret = m_part_file->writev(vec, map.piece, map.start, e);
+				int const ret = m_part_file->write(buf, map.piece, map.start, e);
 
 				if (e)
 				{
 					ec.ec = e;
-					ec.file(file_index);
 					ec.operation = operation_t::partfile_write;
 					return -1;
 				}
@@ -646,74 +650,73 @@ namespace libtorrent {
 			// we're writing to it
 			m_stat_cache.set_dirty(file_index);
 
+			TORRENT_ASSERT(file_index < m_files.end_file());
+
 			auto handle = open_file(sett, file_index
-				, aux::open_mode::write | flags, ec);
+				, aux::open_mode::write | mode, ec);
 			if (ec) return -1;
 
+			// set this unconditionally in case the upper layer would like to treat
+			// short reads as errors
+			ec.operation = operation_t::file_write;
+
+			if (!m_use_mmap_writes || !handle->has_memory_map())
+				return aux::pwrite_all(handle->fd(), buf, file_offset, ec.ec);
+
 			int ret = 0;
-			error_code e;
 			span<byte> file_range = handle->range().subspan(static_cast<std::ptrdiff_t>(file_offset));
-			for (auto buf : vec)
+
+			try
 			{
 				TORRENT_ASSERT(file_range.size() >= buf.size());
 
 				sig::try_signal([&]{
 					std::memcpy(const_cast<char*>(file_range.data()), buf.data(), static_cast<std::size_t>(buf.size()));
-				});
+					});
 
 				file_range = file_range.subspan(buf.size());
 				ret += static_cast<int>(buf.size());
+
+				if (flags & disk_interface::volatile_read)
+					handle->dont_need(file_range.first(buf.size()));
+				if (flags & disk_interface::flush_piece)
+					handle->page_out(file_range.first(buf.size()));
+			}
+			catch (std::system_error const& err)
+			{
+				ec.ec = translate_error(err.code(), true);
+				return -1;
 			}
 
 #if TORRENT_HAVE_MAP_VIEW_OF_FILE
 			m_pool.record_file_write(storage_index(), file_index, ret);
 #endif
 
-			// set this unconditionally in case the upper layer would like to treat
-			// short reads as errors
-			ec.operation = operation_t::file_write;
-
-			if (e)
-			{
-				ec.ec = e;
-				ec.file(file_index);
-				return -1;
-			}
-
 			return ret;
 		});
 	}
 
-	int mmap_storage::hashv(settings_interface const& sett
+	int mmap_storage::hash(settings_interface const& sett
 		, hasher& ph, std::ptrdiff_t const len
 		, piece_index_t const piece, int const offset
-		, aux::open_mode_t const flags, storage_error& error)
+		, aux::open_mode_t const mode
+		, disk_job_flags_t const flags
+		, storage_error& error)
 	{
 #ifdef TORRENT_SIMULATE_SLOW_READ
-		std::this_thread::sleep_for(seconds(1));
+		std::this_thread::sleep_for(milliseconds(rand() % 2000));
 #endif
-		char dummy = 0;
-		iovec_t dummy1 = {&dummy, len};
-		span<iovec_t> dummy2(&dummy1, 1);
 
-		return readwritev(files(), dummy2, piece, offset, error
-			, [this, flags, &ph, &sett](file_index_t const file_index
+		char dummy;
+		std::vector<char> scratch;
+
+		return readwrite(files(), {&dummy, len}, piece, offset, error
+			, [this, mode, flags, &ph, &sett, &scratch](file_index_t const file_index
 				, std::int64_t const file_offset
-				, span<iovec_t const> vec, storage_error& ec)
+				, span<char> const buf, storage_error& ec)
 		{
-			auto const read_size = bufs_size(vec);
-
 			if (files().pad_file_at(file_index))
-			{
-				std::array<char, 64> zero_buf;
-				zero_buf.fill(0);
-				span<char> zeroes = zero_buf;
-				for (std::ptrdiff_t left = read_size; left > 0; left -= zeroes.size())
-				{
-					ph.update({zeroes.data(), std::min(zeroes.size(), left)});
-				}
-				return read_size;
-			}
+				return aux::hash_zeroes(ph, buf.size());
 
 			if (file_index < m_file_priority.end_index()
 				&& m_file_priority[file_index] == dont_download
@@ -721,43 +724,57 @@ namespace libtorrent {
 			{
 				error_code e;
 				peer_request map = files().map_file(file_index, file_offset, 0);
-				int const ret = m_part_file->hashv(ph, read_size
+				int const ret = m_part_file->hash(ph, buf.size()
 					, map.piece, map.start, e);
 
 				if (e)
 				{
 					ec.ec = e;
-					ec.file(file_index);
 					ec.operation = operation_t::partfile_read;
 					return -1;
 				}
 				return ret;
 			}
 
-			auto handle = open_file(sett, file_index, flags, ec);
+			auto handle = open_file(sett, file_index, mode, ec);
 			if (ec) return -1;
+
+			if (!handle->has_memory_map())
+			{
+				scratch.resize(std::size_t(buf.size()));
+				int const ret = aux::pread_all(handle->fd(), scratch, file_offset, ec.ec);
+				if (ec) return -1;
+				ph.update(scratch);
+				return ret;
+			}
 
 			int ret = 0;
 			span<byte const> file_range = handle->range();
 			if (file_range.size() > file_offset)
 			{
 				file_range = file_range.subspan(std::ptrdiff_t(file_offset)
-					, std::min(std::ptrdiff_t(read_size), std::ptrdiff_t(file_range.size() - file_offset)));
+					, std::min(buf.size(), std::ptrdiff_t(file_range.size() - file_offset)));
 
 				sig::try_signal([&]{
 					ph.update({const_cast<char const*>(file_range.data()), file_range.size()});
 				});
 				ret += static_cast<int>(file_range.size());
+				if (flags & disk_interface::volatile_read)
+					handle->dont_need(file_range);
+				if (flags & disk_interface::flush_piece)
+					handle->page_out(file_range);
 			}
 
 			return ret;
 		});
 	}
 
-	int mmap_storage::hashv2(settings_interface const& sett
+	int mmap_storage::hash2(settings_interface const& sett
 		, hasher256& ph, std::ptrdiff_t const len
 		, piece_index_t const piece, int const offset
-		, aux::open_mode_t const flags, storage_error& error)
+		, aux::open_mode_t const mode
+		, disk_job_flags_t const flags
+		, storage_error& error)
 	{
 		std::int64_t const start_offset = static_cast<int>(piece) * std::int64_t(files().piece_length()) + offset;
 		file_index_t const file_index = files().file_index_at_offset(start_offset);
@@ -771,7 +788,7 @@ namespace libtorrent {
 		{
 			error_code e;
 			peer_request map = files().map_file(file_index, file_offset, 0);
-			int const ret = m_part_file->hashv2(ph, len
+			int const ret = m_part_file->hash2(ph, len
 				, map.piece, map.start, e);
 
 			if (e)
@@ -784,22 +801,45 @@ namespace libtorrent {
 			return ret;
 		}
 
-		auto handle = open_file(sett, file_index, flags, error);
+		auto handle = open_file(sett, file_index, mode, error);
 		if (error) return -1;
+
+		if (!handle->has_memory_map())
+		{
+			std::vector<char> scratch(static_cast<std::size_t>(len));
+			int const ret = aux::pread_all(handle->fd(), scratch, file_offset, error.ec);
+			if (error)
+			{
+				error.file(file_index);
+				error.operation = operation_t::file_read;
+				return -1;
+			}
+			ph.update(scratch);
+			return ret;
+		}
 
 		span<byte const> file_range = handle->range();
 		if (std::int64_t(file_range.size()) <= file_offset)
-			return 0;
+		{
+			error.ec = boost::asio::error::eof;
+			error.file(file_index);
+			error.operation = operation_t::file_read;
+			return -1;
+		}
 		file_range = file_range.subspan(std::ptrdiff_t(file_offset));
 		file_range = file_range.first(std::min(std::ptrdiff_t(len), file_range.size()));
 		ph.update(file_range);
+		if (flags & disk_interface::volatile_read)
+			handle->dont_need(file_range);
+		if (flags & disk_interface::flush_piece)
+			handle->page_out(file_range);
 
 		return static_cast<int>(file_range.size());
 	}
 
 	// a wrapper around open_file_impl that, if it fails, makes sure the
 	// directories have been created and retries
-	boost::optional<aux::file_view> mmap_storage::open_file(settings_interface const& sett
+	std::shared_ptr<aux::file_mapping> mmap_storage::open_file(settings_interface const& sett
 		, file_index_t const file
 		, aux::open_mode_t mode, storage_error& ec) const
 	{
@@ -828,31 +868,10 @@ namespace libtorrent {
 		}
 #endif
 
-		boost::optional<aux::file_view> h = open_file_impl(sett, file, mode, ec);
-		if ((mode & aux::open_mode::write)
-			&& ec.ec == boost::system::errc::no_such_file_or_directory)
-		{
-			// this means the directory the file is in doesn't exist.
-			// so create it
-			ec.ec.clear();
-			std::string path = files().file_path(file, m_save_path);
-			create_directories(parent_path(path), ec.ec);
-
-			if (ec.ec)
-			{
-				// if the directory creation failed, don't try to open the file again
-				// but actually just fail
-				ec.file(file);
-				ec.operation = operation_t::mkdir;
-				return {};
-			}
-
-			h = open_file_impl(sett, file, mode, ec);
-		}
+		std::shared_ptr<aux::file_mapping> h = open_file_impl(sett, file, mode, ec);
 		if (ec.ec)
 		{
 			ec.file(file);
-			ec.operation = operation_t::file_open;
 			return {};
 		}
 		TORRENT_ASSERT(h);
@@ -870,7 +889,7 @@ namespace libtorrent {
 		return h;
 	}
 
-	boost::optional<aux::file_view> mmap_storage::open_file_impl(settings_interface const& sett
+	std::shared_ptr<aux::file_mapping> mmap_storage::open_file_impl(settings_interface const& sett
 		, file_index_t file
 		, aux::open_mode_t mode
 		, storage_error& ec) const
@@ -883,13 +902,16 @@ namespace libtorrent {
 			mode |= aux::open_mode::sparse;
 
 		if (sett.get_bool(settings_pack::no_atime_storage))
-		{
 			mode |= aux::open_mode::no_atime;
-		}
+
+		if (files().file_size(file) / default_block_size
+			<= sett.get_int(settings_pack::mmap_file_size_cutoff))
+			mode |= aux::open_mode::no_mmap;
 
 		// if we have a cache already, don't store the data twice by leaving it in the OS cache as well
-		if (sett.get_int(settings_pack::disk_io_write_mode)
-			== settings_pack::disable_os_cache)
+		auto const write_mode = sett.get_int(settings_pack::disk_io_write_mode);
+		if (write_mode == settings_pack::disable_os_cache
+			|| write_mode == settings_pack::write_through)
 		{
 			mode |= aux::open_mode::no_cache;
 		}

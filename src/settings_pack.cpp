@@ -1,10 +1,10 @@
 /*
 
-Copyright (c) 2014-2020, Arvid Norberg
+Copyright (c) 2014-2022, Arvid Norberg
 Copyright (c) 2015, Thomas Yuan
 Copyright (c) 2016-2018, Alden Torres
-Copyright (c) 2017, Steven Siloti
 Copyright (c) 2017, Andrei Kurushin
+Copyright (c) 2017, Steven Siloti
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -101,15 +101,27 @@ namespace libtorrent {
 #if TORRENT_ABI_VERSION == 1
 #define DEPRECATED_SET(name, default_value, fun) { #name, fun, default_value }
 #define DEPRECATED_SET_STR(name, default_value, fun) { #name, fun, default_value }
+#define DEPRECATED2_SET(name, default_value, fun) { #name, fun, default_value }
+#elif TORRENT_ABI_VERSION == 2
+#define DEPRECATED_SET(name, default_value, fun) { "", nullptr, 0 }
+#define DEPRECATED_SET_STR(name, default_value, fun) { "", nullptr, nullptr }
+#define DEPRECATED2_SET(name, default_value, fun) { #name, fun, default_value }
 #else
 #define DEPRECATED_SET(name, default_value, fun) { "", nullptr, 0 }
 #define DEPRECATED_SET_STR(name, default_value, fun) { "", nullptr, nullptr }
+#define DEPRECATED2_SET(name, default_value, fun) { "", nullptr, 0 }
 #endif
 
 #ifdef TORRENT_WINDOWS
 constexpr int CLOSE_FILE_INTERVAL = 240;
 #else
 constexpr int CLOSE_FILE_INTERVAL = 0;
+#endif
+
+#ifdef TORRENT_WINDOWS
+constexpr int DISK_WRITE_MODE = settings_pack::write_through;
+#else
+constexpr int DISK_WRITE_MODE = settings_pack::enable_os_cache;
 #endif
 
 		// tested to fail with _MSC_VER <= 1916. The actual version condition
@@ -172,7 +184,7 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(disable_hash_checks, false, nullptr),
 		SET(allow_i2p_mixed, false, nullptr),
 		DEPRECATED_SET(low_prio_disk, true, nullptr),
-		SET(volatile_read_cache, false, nullptr),
+		DEPRECATED2_SET(volatile_read_cache, false, nullptr),
 		DEPRECATED_SET(guided_read_cache, false, nullptr),
 		SET(no_atime_storage, true, nullptr),
 		SET(incoming_starts_queued_torrents, false, nullptr),
@@ -183,7 +195,7 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(enable_incoming_utp, true, nullptr),
 		SET(enable_outgoing_tcp, true, nullptr),
 		SET(enable_incoming_tcp, true, nullptr),
-		SET(ignore_resume_timestamps, false, nullptr),
+		DEPRECATED_SET(ignore_resume_timestamps, false, nullptr),
 		SET(no_recheck_incomplete_resume, false, nullptr),
 		SET(anonymous_mode, false, nullptr),
 		SET(report_web_seed_downloads, true, &session_impl::update_report_web_seed_downloads),
@@ -198,10 +210,10 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		DEPRECATED_SET(lock_files, false, nullptr),
 		DEPRECATED_SET(contiguous_recv_buffer, true, nullptr),
 		SET(ban_web_seeds, true, nullptr),
-		SET(allow_partial_disk_writes, true, nullptr),
+		DEPRECATED2_SET(allow_partial_disk_writes, true, nullptr),
 		DEPRECATED_SET(force_proxy, false, nullptr),
 		SET(support_share_mode, true, nullptr),
-		DEPRECATED_SET(support_merkle_torrents, false, nullptr),
+		DEPRECATED2_SET(support_merkle_torrents, false, nullptr),
 		SET(report_redundant_bytes, true, nullptr),
 		SET(listen_system_port_fallback, true, nullptr),
 		DEPRECATED_SET(use_disk_cache_pool, false, nullptr),
@@ -272,11 +284,11 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		DEPRECATED_SET(cache_size, 2048, nullptr),
 		DEPRECATED_SET(cache_buffer_chunk_size, 0, nullptr),
 		DEPRECATED_SET(cache_expiry, 300, nullptr),
-		SET(disk_io_write_mode, settings_pack::enable_os_cache, nullptr),
+		SET(disk_io_write_mode, DISK_WRITE_MODE, nullptr),
 		SET(disk_io_read_mode, settings_pack::enable_os_cache, nullptr),
 		SET(outgoing_port, 0, nullptr),
 		SET(num_outgoing_ports, 0, nullptr),
-		SET(peer_tos, 0x20, &session_impl::update_peer_tos),
+		SET(peer_dscp, 0x04, &session_impl::update_peer_dscp),
 		SET(active_downloads, 3, &session_impl::trigger_auto_manage),
 		SET(active_seeds, 5, &session_impl::trigger_auto_manage),
 		SET(active_checking, 1, &session_impl::trigger_auto_manage),
@@ -300,8 +312,8 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(send_socket_buffer_size, 0, &session_impl::update_socket_buffer_size),
 		SET(max_peer_recv_buffer_size, 2 * 1024 * 1024, nullptr),
 		DEPRECATED_SET(file_checks_delay_per_block, 0, nullptr),
-		SET(read_cache_line_size, 32, nullptr),
-		SET(write_cache_line_size, 16, nullptr),
+		DEPRECATED2_SET(read_cache_line_size, 32, nullptr),
+		DEPRECATED2_SET(write_cache_line_size, 16, nullptr),
 		SET(optimistic_disk_retry, 10 * 60, nullptr),
 		SET(max_suggest_pieces, 16, nullptr),
 		SET(local_service_announce_interval, 5 * 60, nullptr),
@@ -309,9 +321,9 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(udp_tracker_token_expiry, 60, nullptr),
 		DEPRECATED_SET(default_cache_min_age, 1, nullptr),
 		SET(num_optimistic_unchoke_slots, 0, nullptr),
-		SET(default_est_reciprocation_rate, 16000, nullptr),
-		SET(increase_est_reciprocation_rate, 20, nullptr),
-		SET(decrease_est_reciprocation_rate, 3, nullptr),
+		DEPRECATED_SET(default_est_reciprocation_rate, 16000, nullptr),
+		DEPRECATED_SET(increase_est_reciprocation_rate, 20, nullptr),
+		DEPRECATED_SET(decrease_est_reciprocation_rate, 3, nullptr),
 		SET(max_pex_peers, 50, nullptr),
 		SET(tick_interval, 500, nullptr),
 		SET(share_mode_target, 3, nullptr),
@@ -331,14 +343,14 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(utp_fin_resends, 2, nullptr),
 		SET(utp_num_resends, 3, nullptr),
 		SET(utp_connect_timeout, 3000, nullptr),
-		SET(utp_delayed_ack, 0, nullptr),
+		DEPRECATED_SET(utp_delayed_ack, 0, nullptr),
 		SET(utp_loss_multiplier, 50, nullptr),
 		SET(mixed_mode_algorithm, settings_pack::peer_proportional, nullptr),
 		SET(listen_queue_size, 5, nullptr),
 		SET(torrent_connect_boost, 30, nullptr),
 		SET(alert_queue_size, 2000, &session_impl::update_alert_queue_size),
 		SET(max_metadata_size, 3 * 1024 * 10240, nullptr),
-		SET(hashing_threads, 2, &session_impl::update_disk_threads),
+		SET(hashing_threads, 1, &session_impl::update_disk_threads),
 		SET(checking_mem_usage, 256, nullptr),
 		SET(predictive_piece_announce, 0, nullptr),
 		SET(aio_threads, 10, &session_impl::update_disk_threads),
@@ -388,6 +400,12 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		SET(dht_max_infohashes_sample_count, 20, nullptr),
 		SET(max_piece_count, 0x200000, nullptr),
 		SET(metadata_token_limit, 2500000, nullptr),
+		SET(disk_write_mode, settings_pack::mmap_write_mode_t::auto_mmap_write, nullptr),
+		SET(mmap_file_size_cutoff, 40, nullptr),
+		SET(i2p_inbound_quantity, 3, nullptr),
+		SET(i2p_outbound_quantity, 3, nullptr),
+		SET(i2p_inbound_length, 3, nullptr),
+		SET(i2p_outbound_length, 3, nullptr)
 	}});
 
 #undef SET
@@ -413,6 +431,11 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 			if (key != bool_settings[k].name) continue;
 			return settings_pack::bool_type_base + k;
 		}
+
+		// backwards compatibility with previous name
+		if (key == "peer_tos")
+			return settings_pack::peer_dscp;
+
 		return -1;
 	}
 
@@ -759,7 +782,13 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		auto i = std::lower_bound(m_strings.begin(), m_strings.end(), v
 				, &compare_first<std::string>);
 		if (i != m_strings.end() && i->first == name) return i->second;
-		return empty;
+
+		if (str_settings[name & index_mask].default_value == nullptr)
+			return empty;
+
+		static std::string tmp;
+		tmp = str_settings[name & index_mask].default_value;
+		return tmp;
 	}
 
 	int settings_pack::get_int(int name) const
@@ -778,7 +807,8 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		auto i = std::lower_bound(m_ints.begin(), m_ints.end(), v
 				, &compare_first<int>);
 		if (i != m_ints.end() && i->first == name) return i->second;
-		return 0;
+
+		return int_settings[name & index_mask].default_value;
 	}
 
 	bool settings_pack::get_bool(int name) const
@@ -797,7 +827,8 @@ constexpr int CLOSE_FILE_INTERVAL = 0;
 		auto i = std::lower_bound(m_bools.begin(), m_bools.end(), v
 			, &compare_first<bool>);
 		if (i != m_bools.end() && i->first == name) return i->second;
-		return false;
+
+		return bool_settings[name & index_mask].default_value;
 	}
 
 	void settings_pack::clear()

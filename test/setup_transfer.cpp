@@ -1,9 +1,9 @@
 /*
 
-Copyright (c) 2006-2020, Arvid Norberg
+Copyright (c) 2006-2022, Arvid Norberg
 Copyright (c) 2015-2017, Alden Torres
-Copyright (c) 2016-2018, Steven Siloti
 Copyright (c) 2016, Andrei Kurushin
+Copyright (c) 2016-2018, Steven Siloti
 Copyright (c) 2017, 2020, AllSeeingEyeTolledEweSew
 Copyright (c) 2018, d-komarov
 All rights reserved.
@@ -179,7 +179,7 @@ void add_mp(span<std::uint8_t> target, span<std::uint8_t const> add)
 	{
 		int const res = carry + int(target[i]) + add[i];
 		carry = res >> 8;
-		target[i] = res % 255;
+		target[i] = std::uint8_t(res & 255);
 	}
 }
 }
@@ -220,11 +220,13 @@ bool supports_ipv6()
 #if defined TORRENT_BUILD_SIMULATOR
 	return true;
 #elif defined TORRENT_WINDOWS
-	TORRENT_TRY {
+	try
+	{
 		error_code ec;
 		make_address("::1", ec);
 		return !ec;
-	} TORRENT_CATCH(std::exception const&) { return false; }
+	}
+	catch (std::exception const&) { return false; }
 #else
 	io_context ios;
 	tcp::socket test(ios);
@@ -458,7 +460,7 @@ void wait_for_downloading(lt::session& ses, char const* name)
 				return sc && sc->state == torrent_status::downloading;
 			}, false);
 		if (downloading_done) break;
-		if (total_seconds(clock_type::now() - start) > 10) break;
+		if (clock_type::now() - start > seconds(30)) break;
 		a = ses.wait_for_alert(seconds(5));
 	} while (a);
 	if (!downloading_done)
@@ -483,7 +485,7 @@ void wait_for_seeding(lt::session& ses, char const* name)
 				return sc && sc->state == torrent_status::seeding;
 			}, false);
 		if (seeding) break;
-		if (total_seconds(clock_type::now() - start) > 10) break;
+		if (clock_type::now() - start > seconds(30)) break;
 		a = ses.wait_for_alert(seconds(5));
 	} while (a);
 	if (!seeding)
@@ -705,7 +707,7 @@ std::vector<std::string> get_python()
 	if (req_size > 1 && req_size < 4096)
 	{
 		std::vector<char> buf(req_size);
-		DWORD const sz = GetEnvironmentVariable("PYTHON_INTERPRETER", buf.data(), buf.size());
+		DWORD const sz = GetEnvironmentVariable("PYTHON_INTERPRETER", buf.data(), DWORD(buf.size()));
 		if (size_t(sz) == buf.size() - 1) ret.emplace_back(buf.data(), buf.size());
 	}
 #endif
@@ -716,7 +718,7 @@ std::vector<std::string> get_python()
 
 int find_available_port()
 {
-	int port = 2000 + (std::int64_t(::getpid()) + _g_test_idx + std::rand()) % 60000;
+	int port = 2000 + (std::int64_t(::getpid()) + ::unit_test::g_test_idx + std::rand()) % 60000;
 	error_code ec;
 	io_context ios;
 
@@ -894,12 +896,10 @@ void create_random_files(std::string const& path, span<const int> file_sizes
 		int to_write = file_sizes[i];
 		if (fs) fs->add_file(full_path, to_write);
 		ofstream f(full_path.c_str());
-		std::int64_t offset = 0;
 		while (to_write > 0)
 		{
 			int const s = std::min(to_write, static_cast<int>(random_data.size()));
 			f.write(random_data.data(), s);
-			offset += s;
 			to_write -= s;
 		}
 	}
@@ -964,7 +964,7 @@ std::shared_ptr<torrent_info> create_torrent(std::ostream* file
 		}
 		merkle_fill_tree(v2tree, merkle_num_leafs(blocks_in_piece));
 
-		for (piece_index_t i(0); i < t.files().end_piece(); ++i)
+		for (piece_index_t i(0); i < t.end_piece(); ++i)
 			t.set_hash2(file_index_t{ 0 }, i - 0_piece, v2tree[0]);
 	}
 

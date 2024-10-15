@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2016, 2019-2020, Arvid Norberg
+Copyright (c) 2016, 2019-2020, 2022, Arvid Norberg
 Copyright (c) 2018, Steven Siloti
 All rights reserved.
 
@@ -55,21 +55,21 @@ namespace aux {
 	{
 		explicit posix_storage(storage_params const& p);
 		file_storage const& files() const;
-		file_storage const& orig_files() const { return m_files; }
 		~posix_storage();
 
-		int readv(settings_interface const& sett
-			, span<iovec_t const> bufs
+		int read(settings_interface const& sett
+			, span<char> bufs
 			, piece_index_t const piece, int const offset
 			, storage_error& error);
 
-		int writev(settings_interface const& sett
-			, span<iovec_t const> bufs
+		int write(settings_interface const& sett
+			, span<char> bufs
 			, piece_index_t const piece, int const offset
 			, storage_error& error);
 
 		bool has_any_file(storage_error& error);
-		void set_file_priority(aux::vector<download_priority_t, file_index_t>& prio
+		void set_file_priority(settings_interface const&
+			, aux::vector<download_priority_t, file_index_t>& prio
 			, storage_error& ec);
 		bool verify_resume_data(add_torrent_params const& rd
 			, aux::vector<std::string, file_index_t> const& links
@@ -84,7 +84,7 @@ namespace aux {
 
 		void rename_file(file_index_t const index, std::string const& new_filename, storage_error& ec);
 
-		void initialize(settings_interface const&, storage_error& ec);
+		status_t initialize(settings_interface const&, storage_error& ec);
 
 	private:
 

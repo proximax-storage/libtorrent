@@ -1,11 +1,11 @@
 /*
 
-Copyright (c) 2006-2020, Arvid Norberg
+Copyright (c) 2006-2022, Arvid Norberg
 Copyright (c) 2007, Un Shyam
 Copyright (c) 2015, Mikhail Titov
 Copyright (c) 2016-2020, Alden Torres
-Copyright (c) 2016-2018, Pavel Pimenov
 Copyright (c) 2016-2017, Andrei Kurushin
+Copyright (c) 2016-2018, Pavel Pimenov
 Copyright (c) 2016-2020, Steven Siloti
 Copyright (c) 2017, Antoine Dahan
 Copyright (c) 2018, Greg Hazel
@@ -236,10 +236,10 @@ namespace {
 			out_policy = settings_pack::pe_disabled;
 #endif
 #ifndef TORRENT_DISABLE_LOGGING
-		static char const* policy_name[] = {"forced", "enabled", "disabled"};
-		TORRENT_ASSERT(out_policy < sizeof(policy_name)/sizeof(policy_name[0]));
+		static char const* policy_name[] = {"forced", "enabled", "disabled", "invalid-setting"};
+		int const policy_name_idx = out_policy > 3 ? 3 : out_policy;
 		peer_log(peer_log_alert::info, "ENCRYPTION"
-			, "outgoing encryption policy: %s", policy_name[out_policy]);
+			, "outgoing encryption policy: %s", policy_name[policy_name_idx]);
 #endif
 
 		if (out_policy == settings_pack::pe_forced)
@@ -284,11 +284,15 @@ namespace {
 				setup_receive();
 			}
 		}
-		else if (out_policy == settings_pack::pe_disabled)
+		else
 #endif
 		{
+#if !defined TORRENT_DISABLE_ENCRYPTION
+			TORRENT_ASSERT(out_policy == settings_pack::pe_disabled);
+#endif
 			write_handshake();
 
+			TORRENT_ASSERT(m_sent_handshake);
 			// start in the state where we are trying to read the
 			// handshake from the other side
 			m_recv_buffer.reset(20);
@@ -495,7 +499,27 @@ namespace {
 		if (support_extensions()) p.flags |= peer_info::supports_extensions;
 		if (is_outgoing()) p.flags |= peer_info::local_connection;
 #if TORRENT_USE_I2P
-		if (is_i2p(get_socket())) p.flags |= peer_info::i2p_socket;
+		if (is_i2p(get_socket()))
+		{
+			p.flags |= peer_info::i2p_socket;
+			auto const* pi = peer_info_struct();
+			if (pi != nullptr)
+			{
+				try
+				{
+					sha256_hash const b32_addr = hasher256(base64decode_i2p(pi->dest())).final();
+					p.set_i2p_destination(b32_addr);
+				}
+				catch (lt::system_error const&)
+				{
+					p.set_i2p_destination(sha256_hash());
+				}
+			}
+			else
+			{
+				p.set_i2p_destination(sha256_hash());
+			}
+		}
 #endif
 		if (is_utp(get_socket())) p.flags |= peer_info::utp_socket;
 		if (is_ssl(get_socket())) p.flags |= peer_info::ssl_socket;
@@ -541,7 +565,7 @@ namespace {
 #endif
 
 		m_dh_key_exchange.reset(new (std::nothrow) dh_key_exchange);
-		if (!m_dh_key_exchange || !m_dh_key_exchange->good())
+		if (!m_dh_key_exchange)
 		{
 			disconnect(errors::no_memory, operation_t::encryption);
 			return;
@@ -883,7 +907,7 @@ namespace {
 		r.length = m_recv_buffer.packet_size() - 9;
 
 		// is any of the piece message header data invalid?
-		if (!verify_piece(r)) return {};
+		if (!validate_piece_request(r)) return {};
 
 		piece_block_progress p;
 
@@ -3145,6 +3169,44 @@ namespace {
 			on_receive_impl(bytes_transferred);
 	}
 
+#if !defined TORRENT_DISABLE_ENCRYPTION
+	void bt_peer_connection::init_bt_handshake()
+	{
+		m_encrypted = true;
+		if (m_rc4_encrypted)
+		{
+			switch_send_crypto(m_rc4);
+			switch_recv_crypto(m_rc4);
+		}
+
+		// decrypt remaining received bytes
+		if (m_rc4_encrypted)
+		{
+			span<char> const remaining = m_recv_buffer.mutable_buffer()
+				.subspan(m_recv_buffer.packet_size());
+			rc4_decrypt(remaining);
+
+#ifndef TORRENT_DISABLE_LOGGING
+			peer_log(peer_log_alert::info, "ENCRYPTION"
+				, "decrypted remaining %d bytes", int(remaining.size()));
+#endif
+		}
+		m_rc4.reset();
+
+		// encrypted portion of handshake completed, toggle
+		// peer_info pe_support flag back to true
+		if (is_outgoing() &&
+			m_settings.get_int(settings_pack::out_enc_policy)
+				== settings_pack::pe_enabled)
+		{
+			torrent_peer* pi = peer_info_struct();
+			TORRENT_ASSERT(pi);
+
+			pi->pe_support = true;
+		}
+	}
+#endif
+
 	void bt_peer_connection::on_receive_impl(std::size_t bytes_transferred)
 	{
 		std::shared_ptr<torrent> t = associated_torrent().lock();
@@ -3535,30 +3597,28 @@ namespace {
 					m_rc4_encrypted = true;
 			}
 
-			int const len_pad = aux::read_int16(recv_buffer);
+			int len_pad = aux::read_int16(recv_buffer);
 			if (len_pad < 0 || len_pad > 512)
 			{
 				disconnect(errors::invalid_pad_size, operation_t::encryption, peer_error);
 				return;
 			}
 
-			m_state = state_t::read_pe_pad;
+			// len(IA) at the end of pad
 			if (!is_outgoing())
-				m_recv_buffer.reset(len_pad + 2); // len(IA) at the end of pad
+				len_pad += 2;
+
+			if (len_pad > 0)
+			{
+				m_state = state_t::read_pe_pad;
+				m_recv_buffer.reset(len_pad);
+			}
 			else
 			{
-				if (len_pad == 0)
-				{
-					m_encrypted = true;
-					if (m_rc4_encrypted)
-					{
-						switch_send_crypto(m_rc4);
-						switch_recv_crypto(m_rc4);
-					}
-					m_state = state_t::init_bt_handshake;
-				}
-				else
-					m_recv_buffer.reset(len_pad);
+				TORRENT_ASSERT(len_pad == 0);
+				init_bt_handshake();
+				m_state = state_t::read_protocol_identifier;
+				m_recv_buffer.reset(20);
 			}
 		}
 
@@ -3580,55 +3640,51 @@ namespace {
 				recv_buffer = recv_buffer.subspan(pad_size);
 				int const len_ia = aux::read_int16(recv_buffer);
 
-				if (len_ia < 0)
+#ifndef TORRENT_DISABLE_LOGGING
+				peer_log(peer_log_alert::info, "ENCRYPTION", "len(IA) : %d", len_ia);
+#endif
+				if (len_ia < 0 || len_ia > 68)
 				{
 					disconnect(errors::invalid_encrypt_handshake, operation_t::encryption, peer_error);
 					return;
 				}
 
-#ifndef TORRENT_DISABLE_LOGGING
-				peer_log(peer_log_alert::info, "ENCRYPTION", "len(IA) : %d", len_ia);
-#endif
 				if (len_ia == 0)
 				{
-					// everything after this is Encrypt2
-					m_encrypted = true;
-					if (m_rc4_encrypted)
-					{
-						switch_send_crypto(m_rc4);
-						switch_recv_crypto(m_rc4);
-					}
-					m_state = state_t::init_bt_handshake;
+					// everything after this is encrypted
+					init_bt_handshake();
+					m_state = state_t::read_protocol_identifier;
+					m_recv_buffer.reset(20);
 				}
 				else
 				{
+					// The other peer indicated that a non-zero bytes will be
+					// encrypted at the start of the underlying bittorrent
+					// protocol. This number of bytes, len_ia, is not
+					// necessarily aligned to message boundaries. We first read
+					// that many bytes, decrypt it, and then pass it back into
+					// the regular protocol parser
 					m_state = state_t::read_pe_ia;
 					m_recv_buffer.reset(len_ia);
 				}
 			}
 			else // is_outgoing()
 			{
-				// everything that arrives after this is Encrypt2
-				m_encrypted = true;
-				if (m_rc4_encrypted)
-				{
-					switch_send_crypto(m_rc4);
-					switch_recv_crypto(m_rc4);
-				}
-				m_state = state_t::init_bt_handshake;
+				// everything that arrives after this is encrypted
+				init_bt_handshake();
+				m_state = state_t::read_protocol_identifier;
+				m_recv_buffer.reset(20);
 			}
 		}
 
 		if (m_state == state_t::read_pe_ia)
 		{
-			received_bytes(0, int(bytes_transferred));
-			bytes_transferred = 0;
 			TORRENT_ASSERT(!is_outgoing());
 			TORRENT_ASSERT(!m_encrypted);
 
 			if (!m_recv_buffer.packet_finished()) return;
 
-			// ia is always rc4, so decrypt it
+			// the IA bytes are always rc4, so decrypt it
 			rc4_decrypt(m_recv_buffer.mutable_buffer().first(m_recv_buffer.packet_size()));
 
 #ifndef TORRENT_DISABLE_LOGGING
@@ -3645,51 +3701,20 @@ namespace {
 			}
 			m_rc4.reset();
 
+			// now that we have decrypted IA length of bytes, we
+			// reinterpret the receive buffer as the very start of a normal
+			// connection. First we expect to find the protocol identifier
+			// (i.e. "BitTorrent Protocol")
 			m_state = state_t::read_protocol_identifier;
 			m_recv_buffer.cut(0, 20);
-		}
-
-		if (m_state == state_t::init_bt_handshake)
-		{
-			received_bytes(0, int(bytes_transferred));
-			bytes_transferred = 0;
-			TORRENT_ASSERT(m_encrypted);
-
-			// decrypt remaining received bytes
-			if (m_rc4_encrypted)
-			{
-				span<char> const remaining = m_recv_buffer.mutable_buffer()
-					.subspan(m_recv_buffer.packet_size());
-				rc4_decrypt(remaining);
-
-#ifndef TORRENT_DISABLE_LOGGING
-				peer_log(peer_log_alert::info, "ENCRYPTION"
-					, "decrypted remaining %d bytes", int(remaining.size()));
-#endif
-			}
-			m_rc4.reset();
-
-			// payload stream, start with 20 handshake bytes
-			m_state = state_t::read_protocol_identifier;
-			m_recv_buffer.reset(20);
-
-			// encrypted portion of handshake completed, toggle
-			// peer_info pe_support flag back to true
-			if (is_outgoing() &&
-				m_settings.get_int(settings_pack::out_enc_policy)
-					== settings_pack::pe_enabled)
-			{
-				torrent_peer* pi = peer_info_struct();
-				TORRENT_ASSERT(pi);
-
-				pi->pe_support = true;
-			}
 		}
 
 #endif // #if !defined TORRENT_DISABLE_ENCRYPTION
 
 		if (m_state == state_t::read_protocol_identifier)
 		{
+			TORRENT_ASSERT(!m_outgoing || m_sent_handshake);
+
 			received_bytes(0, int(bytes_transferred));
 			bytes_transferred = 0;
 			TORRENT_ASSERT(m_recv_buffer.packet_size() == 20);
@@ -3747,6 +3772,10 @@ namespace {
 				peer_log(peer_log_alert::info, "ENCRYPTION", "attempting encrypted connection");
 #endif
 				m_state = state_t::read_pe_dhkey;
+				// we're "cutting" off 0 bytes from the receive buffer here
+				// because we want to interpret it as something else. It didn't
+				// contain the expected bittorrent handshake string, so let's
+				// try again to interpret it as an encrypted handshake
 				m_recv_buffer.cut(0, dh_key_len);
 				TORRENT_ASSERT(!m_recv_buffer.packet_finished());
 				return;
@@ -3776,6 +3805,7 @@ namespace {
 #endif
 			}
 
+			TORRENT_ASSERT(!m_outgoing || m_sent_handshake);
 			m_state = state_t::read_info_hash;
             m_recv_buffer.reset(28);
 		}

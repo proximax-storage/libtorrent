@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2007-2008, 2010-2011, 2013-2019, Arvid Norberg
+Copyright (c) 2007-2008, 2010-2011, 2013-2019, 2022, Arvid Norberg
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -85,6 +85,9 @@ extern TORRENT_EXPORT char const* libtorrent_assert_log;
 
 #ifndef TORRENT_USE_SYSTEM_ASSERTS
 
+#define TORRENT_ASSERT_PRECOND_MSG(x, msg) \
+	do { if (x) {} else libtorrent::assert_fail(#x, __LINE__, __FILE__, __func__, msg, 1); } TORRENT_WHILE_0
+
 #define TORRENT_ASSERT_PRECOND(x) \
 	do { if (x) {} else libtorrent::assert_fail(#x, __LINE__, __FILE__, __func__, nullptr, 1); } TORRENT_WHILE_0
 
@@ -93,12 +96,12 @@ extern TORRENT_EXPORT char const* libtorrent_assert_log;
 
 #if TORRENT_USE_IOSTREAM
 #define TORRENT_ASSERT_VAL(x, y) \
-	do { if (x) {} else { std::stringstream __s__; __s__ << #y ": " << y; \
-	libtorrent::assert_fail(#x, __LINE__, __FILE__, __func__, __s__.str().c_str(), 0); } } TORRENT_WHILE_0
+	do { if (x) {} else { std::stringstream _s; _s << #y ": " << y; \
+	libtorrent::assert_fail(#x, __LINE__, __FILE__, __func__, _s.str().c_str(), 0); } } TORRENT_WHILE_0
 
 #define TORRENT_ASSERT_FAIL_VAL(y) \
-	do { std::stringstream __s__; __s__ << #y ": " << y; \
-	libtorrent::assert_fail("<unconditional>", __LINE__, __FILE__, __func__, __s__.str().c_str(), 0); } TORRENT_WHILE_0
+	do { std::stringstream _s; _s << #y ": " << y; \
+	libtorrent::assert_fail("<unconditional>", __LINE__, __FILE__, __func__, _s.str().c_str(), 0); } TORRENT_WHILE_0
 
 #else
 #define TORRENT_ASSERT_VAL(x, y) TORRENT_ASSERT(x)
@@ -110,6 +113,7 @@ extern TORRENT_EXPORT char const* libtorrent_assert_log;
 
 #else
 #include <cassert>
+#define TORRENT_ASSERT_PRECOND_MSG(x, msg) assert(x)
 #define TORRENT_ASSERT_PRECOND(x) assert(x)
 #define TORRENT_ASSERT(x) assert(x)
 #define TORRENT_ASSERT_VAL(x, y) assert(x)
@@ -119,6 +123,7 @@ extern TORRENT_EXPORT char const* libtorrent_assert_log;
 
 #else // TORRENT_USE_ASSERTS
 
+#define TORRENT_ASSERT_PRECOND_MSG(a, msg) do {} TORRENT_WHILE_0
 #define TORRENT_ASSERT_PRECOND(a) do {} TORRENT_WHILE_0
 #define TORRENT_ASSERT(a) do {} TORRENT_WHILE_0
 #define TORRENT_ASSERT_VAL(a, b) do {} TORRENT_WHILE_0

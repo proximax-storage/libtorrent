@@ -21,14 +21,14 @@ ECHO "LDFLAGS =" $(LDFLAGS) ;
 feature libtorrent-link : shared static prebuilt : composite propagated ;
 
 feature libtorrent-python-pic : off on : composite propagated link-incompatible ;
-feature.compose <libtorrent-python-pic>on : <cflags>-fPIC ;
+feature.compose <libtorrent-python-pic>on : <cxxflags>-fPIC ;
 
 # when invoking the install_module target, this feature can be specified to
 # install the python module to a specific directory
 feature python-install-path : : free path ;
 
 # when not specifying a custom install path, this controls whether to install
-# the python module in the system directory or user-specifc directory
+# the python module in the system directory or user-specific directory
 feature python-install-scope : user system : ;
 
 # copied from boost 1.63's boost python jamfile
@@ -83,6 +83,8 @@ else
 		<include>/usr/sfw/include
 	;
 
+	import version ;
+
 	rule boost_python_version ( name : type ? : properties * )
 	{
 		# examples of names for the boost_python library:
@@ -108,14 +110,18 @@ else
 		# debian jessie (1.55.0): libboost_python-py34.so.1.55.0
 		# boost Jamfile:          libboost_python38.so.1.73.0
 
-		local py-version = [ $(properties).get <python> ] ;
-
+		local py-version-str = [ $(properties).get <python> ] ;
+		local py-version = "" ;
 		local infix = "" ;
-		if $(py-version) < 3.7 && [ $(properties).get <target-os> ] = linux
-		{
-			infix = "-py" ;
+		if $(py-version-str) {
+			py-version = [ SPLIT_BY_CHARACTERS $(py-version-str) : "." ] ;
+
+			if [ version.version-less $(py-version) : 3 7 ] && [ $(properties).get <target-os> ] = linux
+			{
+				infix = "-py" ;
+			}
 		}
-		local boost-python-lib = "boost_python" $(infix) [ SPLIT_BY_CHARACTERS $(py-version) : "." ] ;
+		local boost-python-lib = "boost_python" $(infix) $(py-version) ;
 
 		if $(type) in SEARCHED_LIB
 		{
@@ -139,13 +145,13 @@ rule libtorrent_linking ( properties * )
 	if <toolset>msvc in $(properties) || <toolset>intel-win in $(properties)
 	{
 		# allow larger .obj files (with more sections)
-		result += <cflags>/bigobj ;
+		result += <cxxflags>/bigobj ;
 	}
 
 	if <toolset>gcc in $(properties) && <target-os>windows in $(properties)
 	{
 		# allow larger .obj files (with more sections)
-		result += <cflags>-Wa,-mbig-obj ;
+		result += <cxxflags>-Wa,-mbig-obj ;
 	}
 
 	if ! <target-os>windows in $(properties)
@@ -161,7 +167,7 @@ rule libtorrent_linking ( properties * )
 		|| <toolset>clang-darwin in $(properties)
 	{
 		# hide non-external symbols
-		result += <cflags>-fvisibility=hidden ;
+		result += <cxxflags>-fvisibility=hidden ;
 		result += <cxxflags>-fvisibility-inlines-hidden ;
 
 		if ( <toolset>gcc in $(properties) )
@@ -270,6 +276,7 @@ my-python-extension libtorrent
 	src/ip_filter.cpp
 	src/magnet_uri.cpp
 	src/error_code.cpp
+	src/load_torrent.cpp
 	: # requirements
 	<include>src
 	<toolset>gcc:<cxxflags>-Wno-deprecated-declarations
@@ -282,7 +289,7 @@ my-python-extension libtorrent
 	<linkflags>"$(LDFLAGS:J= )"
 	# C4268: 'identifier' : 'const' static/global data initialized
 	#		with compiler generated default constructor fills the object with zeros
-	<toolset>msvc:<cflags>/wd4268
+	<toolset>msvc:<cxxflags>/wd4268
 	: # default-build
 	<warnings>all
 	<cxxstd>14

@@ -1,7 +1,8 @@
 /*
 
-Copyright (c) 2006-2007, 2009, 2013-2014, 2016-2020, Arvid Norberg
-Copyright (c) 2016, Alden Torres
+Copyright (c) 2023, Vladimir Golovnev
+Copyright (c) 2006-2007, 2009, 2013-2014, 2016-2020, 2022, Arvid Norberg
+Copyright (c) 2016, 2021, Alden Torres
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -66,8 +67,31 @@ namespace libtorrent {
 		no_error,
 		fatal_disk_error,
 		need_full_check,
-		file_exist
+		file_exist,
+
+		// hidden
+		mask = 0xf,
+
+		// this is not an enum value, but a flag that can be set in the return
+		// from async_check_files, in case an existing file was found larger than
+		// specified in the torrent. i.e. it has garbage at the end
+		// the status_t field is used for this to preserve ABI.
+		oversized_file = 0x10,
 	};
+
+	// internal
+	inline status_t operator|(status_t lhs, status_t rhs)
+	{
+		return status_t(static_cast<std::uint8_t>(lhs) | static_cast<std::uint8_t>(rhs));
+	}
+	inline status_t operator&(status_t lhs, status_t rhs)
+	{
+		return status_t(static_cast<std::uint8_t>(lhs) & static_cast<std::uint8_t>(rhs));
+	}
+	inline status_t operator~(status_t lhs)
+	{
+		return status_t(~static_cast<std::uint8_t>(lhs));
+	}
 
 	// flags for async_move_storage
 	enum class move_flags_t : std::uint8_t
@@ -87,7 +111,15 @@ namespace libtorrent {
 
 		// if any file exist in the target, take those files instead
 		// of the ones we may have in the source.
-		dont_replace
+		dont_replace,
+
+		// don't move any source files, just forget about them
+		// and begin checking files at new save path
+		reset_save_path,
+
+		// don't move any source files, just change save path
+		// and continue working without any checks
+		reset_save_path_unchecked
 	};
 
 #if TORRENT_ABI_VERSION == 1

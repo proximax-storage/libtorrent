@@ -1,7 +1,7 @@
 /*
 
 Copyright (c) 2018, Steven Siloti
-Copyright (c) 2019, Arvid Norberg
+Copyright (c) 2019, 2022, Arvid Norberg
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -39,5 +39,6 @@ constexpr disk_job_flags_t disk_interface::force_copy;
 constexpr disk_job_flags_t disk_interface::sequential_access;
 constexpr disk_job_flags_t disk_interface::volatile_read;
 constexpr disk_job_flags_t disk_interface::v1_hash;
+constexpr disk_job_flags_t disk_interface::flush_piece;
 
 }

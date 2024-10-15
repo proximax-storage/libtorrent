@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2015, 2017, 2019-2020, Arvid Norberg
+Copyright (c) 2015, 2017, 2019-2021, Arvid Norberg
 Copyright (c) 2017, Steven Siloti
 All rights reserved.
 
@@ -124,7 +124,7 @@ namespace libtorrent {
 	// if we're inserting the hash N, the uncle hashes provide proof of it being
 	// valid by containing 0, 1 and two (as marked in the tree above)
 	// Any non-zero hash encountered in target_tree is assumed to be valid, and
-	// will termiate the validation early, either successful (if there's a
+	// will terminate the validation early, either successful (if there's a
 	// match) or unsuccessful (if there's a mismatch).
 	TORRENT_EXTRA_EXPORT
 	bool merkle_validate_and_insert_proofs(span<sha256_hash> target_tree
@@ -152,7 +152,7 @@ namespace libtorrent {
 	// layer that can be verified, and the root_index is the node that needs to
 	// be known in (tree) to do so. The num_valid_leafs specifies how many of
 	// the leafs that are actually *supposed* to be non-zero. Any leafs beyond
-	// thses are padding and expected to be zero.
+	// these are padding and expected to be zero.
 	// The caller must validate the hash at root_index.
 	TORRENT_EXTRA_EXPORT
 	std::tuple<int, int, int> merkle_find_known_subtree(span<sha256_hash const> const tree

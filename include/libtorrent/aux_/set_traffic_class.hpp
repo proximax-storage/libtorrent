@@ -1,7 +1,6 @@
 /*
 
-Copyright (c) 2017, 2020, Arvid Norberg
-Copyright (c) 2017, Alden Torres
+Copyright (c) 2022, Arvid Norberg
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -31,30 +30,30 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#ifndef TORRENT_ALIGNED_STORAGE_HPP_INCLUDE
-#define TORRENT_ALIGNED_STORAGE_HPP_INCLUDE
+#ifndef TORRENT_SET_TRAFFIC_CLASS_HPP
+#define TORRENT_SET_TRAFFIC_CLASS_HPP
 
-#include <type_traits>
+#include "libtorrent/error_code.hpp"
+#include "libtorrent/socket.hpp"
 
-namespace libtorrent { namespace aux {
+namespace libtorrent {
+namespace aux {
 
-#if defined __GNUC__ && __GNUC__ < 5 && !defined(_LIBCPP_VERSION)
-
-// this is for backwards compatibility with not-quite C++11 compilers
-template <std::size_t Len, std::size_t Align = alignof(void*)>
-struct aligned_storage
-{
-	struct type
+	template <typename Socket>
+	void set_traffic_class(Socket& s, int v, error_code& ec)
 	{
-		alignas(Align) char buffer[Len];
-	};
-};
-
-#else
-
-using std::aligned_storage;
-
+#ifdef IP_DSCP_TRAFFIC_TYPE
+		s.set_option(dscp_traffic_type((v & 0xff) >> 2), ec);
+		if (!ec) return;
+		ec.clear();
 #endif
+#if defined IPV6_TCLASS
+		if (is_v6(s.local_endpoint(ec)))
+			s.set_option(traffic_class(v & 0xfc), ec);
+		else if (!ec)
+#endif
+			s.set_option(type_of_service(v & 0xfc), ec);
+	}
 
 }}
 

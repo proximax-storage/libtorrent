@@ -5,6 +5,10 @@ on:
       branches: [ RC_1_2 RC_2_0 master ]
    pull_request:
 
+concurrency:
+   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}
+   cancel-in-progress: true
+
 jobs:
 
    docs:
@@ -13,7 +17,10 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+        with:
+           fetch-depth: 1
+           filter: tree:0
 
       - name: update package lists
         continue-on-error: true

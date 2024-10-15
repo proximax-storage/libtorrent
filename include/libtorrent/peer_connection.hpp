@@ -1,11 +1,11 @@
 /*
 
 Copyright (c) 2016, Falcosc
-Copyright (c) 2003-2020, Arvid Norberg
+Copyright (c) 2003-2022, Arvid Norberg
 Copyright (c) 2004, Magnus Jonsson
 Copyright (c) 2016-2018, 2020, Alden Torres
-Copyright (c) 2017-2018, Steven Siloti
 Copyright (c) 2017, Pavel Pimenov
+Copyright (c) 2017-2018, Steven Siloti
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -502,6 +502,11 @@ namespace aux {
 		tcp::endpoint const& remote() const override { return m_remote; }
 		tcp::endpoint local_endpoint() const override { return m_local; }
 
+#if TORRENT_USE_I2P
+		std::string const& destination() const override;
+		std::string const& local_i2p_endpoint() const override;
+#endif
+
 		typed_bitfield<piece_index_t> const& get_bitfield() const;
 		std::vector<piece_index_t> const& allowed_fast();
 		std::vector<piece_index_t> const& suggested_pieces() const { return m_suggested_pieces; }
@@ -649,6 +654,7 @@ namespace aux {
 		// picker, allowing another peer to request it immediately
 		void cancel_request(piece_block const& b, bool force = false);
 		void send_block_requests();
+		void send_block_requests_impl();
 
 		void assign_bandwidth(int channel, int amount) override;
 
@@ -663,7 +669,7 @@ namespace aux {
 		// returns the block currently being
 		// downloaded. And the progress of that
 		// block. If the peer isn't downloading
-		// a piece for the moment, implementors
+		// a piece for the moment, implementers
 		// must return an object with the piece_index
 		// value invalid (the default constructor).
 		virtual piece_block_progress downloading_piece_progress() const;
@@ -701,7 +707,7 @@ namespace aux {
 		int max_out_request_queue() const;
 
 		std::time_t last_seen_complete() const { return m_last_seen_complete; }
-		void set_last_seen_complete(int ago) { m_last_seen_complete = ::time(nullptr) - ago; }
+		void set_last_seen_complete(int ago) { m_last_seen_complete = aux::posix_time() - ago; }
 
 		std::int64_t uploaded_in_last_round() const
 		{ return m_statistics.total_payload_upload() - m_uploaded_at_last_round; }
@@ -778,7 +784,7 @@ namespace aux {
 
 		void attach_to_torrent(info_hash_t const& ih);
 
-		bool verify_piece(peer_request const& p) const;
+		bool validate_piece_request(peer_request const& p) const;
 
 		void update_desired_queue_size();
 
@@ -1176,7 +1182,8 @@ namespace aux {
 		// pick any pieces from this peer
 		bool m_no_download:1;
 
-		// 1 bit
+		// indicates that we want to request more blocks from this peer
+		bool m_deferred_send_block_requests:1;
 
 		// set to true while we're trying to holepunch
 		bool m_holepunch_mode:1;

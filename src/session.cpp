@@ -1,7 +1,7 @@
 /*
 
 Copyright (c) 2003, Magnus Jonsson
-Copyright (c) 2003, 2006, 2008-2020, Arvid Norberg
+Copyright (c) 2003, 2006, 2008-2020, 2022, Arvid Norberg
 Copyright (c) 2016, Alden Torres
 Copyright (c) 2017, 2020, Steven Siloti
 All rights reserved.
@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/disk_interface.hpp"
 #include "libtorrent/mmap_disk_io.hpp"
 #include "libtorrent/posix_disk_io.hpp"
+#include "libtorrent/platform_util.hpp"
 
 #ifdef SIRIUS_DRIVE_MULTI
 #include "sirius_drive/session_delegate.h"
@@ -56,6 +57,7 @@ namespace libtorrent {
 	constexpr feature_flags_t plugin::tick_feature;
 	constexpr feature_flags_t plugin::dht_request_feature;
 	constexpr feature_flags_t plugin::alert_feature;
+	constexpr feature_flags_t plugin::unknown_torrent_feature;
 #endif
 
 namespace aux {
@@ -202,9 +204,6 @@ namespace {
 		// unchoke all peers
 		set.set_int(settings_pack::unchoke_slots_limit, -1);
 
-		set.set_int(settings_pack::read_cache_line_size, 32);
-		set.set_int(settings_pack::write_cache_line_size, 256);
-
 		// the max number of bytes pending write before we throttle
 		// download rate
 		set.set_int(settings_pack::max_queued_disk_bytes, 7 * 1024 * 1024);
@@ -344,8 +343,11 @@ namespace {
 		{
 			// start a thread for the message pump
 			auto s = m_io_service;
-			m_thread = std::make_shared<std::thread>(
-				[=] { s->run(); });
+			m_thread = std::make_shared<std::thread>([=]
+			{
+				set_thread_name("libtorrent-network-thread");
+				s->run();
+			});
 		}
 	}
 

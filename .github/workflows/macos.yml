@@ -5,6 +5,14 @@ on:
       branches: [ RC_1_2 RC_2_0 master ]
    pull_request:
 
+concurrency:
+   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}
+   cancel-in-progress: true
+
+env:
+   HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+   HOMEBREW_NO_AUTO_UPDATE: 1
+
 jobs:
 
    test:
@@ -18,9 +26,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - uses: Chocobo1/setup-ccache-action@v1
         with:
@@ -30,14 +40,14 @@ jobs:
 
       - name: install boost
         run: |
-          brew install boost-build boost openssl
+          brew install boost-build boost openssl@3
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build and run tests
         run: (cd test; b2 ${{ matrix.config }} -l400 warnings-as-errors=on debug-iterators=on invariant-checks=full asserts=on deterministic-tests)
 
       - name: run tests (flaky)
-        uses: nick-invision/retry@v2
+        uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
           retry_wait_seconds: 1
@@ -51,9 +61,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - uses: Chocobo1/setup-ccache-action@v1
         with:
@@ -63,7 +75,7 @@ jobs:
 
       - name: install boost
         run: |
-          brew install boost-build boost openssl
+          brew install boost-build boost openssl@3
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build and run simulations
@@ -83,9 +95,11 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - uses: Chocobo1/setup-ccache-action@v1
         with:
@@ -95,7 +109,7 @@ jobs:
 
       - name: install boost
         run: |
-          brew install boost-build boost openssl
+          brew install boost-build boost openssl@3
           echo "using darwin ;" >>~/user-config.jam
 
       - name: build library
@@ -110,13 +124,26 @@ jobs:
 
       steps:
       - name: checkout
-        uses: actions/checkout@v2.3.3
+        uses: actions/checkout@v4
         with:
            submodules: true
+           fetch-depth: 1
+           filter: tree:0
 
       - name: install boost
         run: |
-          brew install boost-build boost
+          git clone --depth=1 --recurse-submodules -j10 --branch=boost-1.78.0 https://github.com/boostorg/boost.git
+          cd boost
+          ./bootstrap.sh
+
+      - name: boost headers
+        run: |
+          cd boost
+          ./b2 headers
+          cp b2 ..
+
+      - name: user-config
+        run: |
           echo "using darwin : ios_sim : clang++ : <compileflags>-Wno-deprecated-declarations
           <compileflags>\"-isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk\"
           <compileflags>-mios-simulator-version-min=7
@@ -137,4 +164,4 @@ jobs:
 
       - name: build library
         run: |
-          b2 -l400 cxxstd=14 darwin-ios darwin-ios_sim address-model=64  link=static
+          BOOST_ROOT=boost ./b2 -l400 cxxstd=14 target-os=iphone crypto=built-in darwin-ios darwin-ios_sim address-model=64  link=static

@@ -1,7 +1,7 @@
 /*
 
-Copyright (c) 2016, Alden Torres
-Copyright (c) 2016-2020, Arvid Norberg
+Copyright (c) 2016, 2021, Alden Torres
+Copyright (c) 2016-2022, Arvid Norberg
 Copyright (c) 2016, Pavel Pimenov
 Copyright (c) 2017-2018, Steven Siloti
 All rights reserved.
@@ -60,15 +60,12 @@ TORRENT_TEST(create_verbatim_torrent)
 		"12:piece lengthi65536e6:pieces20:ababababababababababee";
 
 	lt::torrent_info info(test_torrent, lt::from_span);
-
-	info.add_tracker("http://test.com");
-	info.add_tracker("http://test.com");
-	TEST_EQUAL(info.trackers().size(), 1);
-
 	lt::create_torrent t(info);
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+
+	TEST_CHECK(buffer == t.generate_buf());
 
 	// now, make sure the info dictionary was unchanged
 	buffer.push_back('\0');
@@ -122,6 +119,7 @@ int test_piece_size(int const piece_size, lt::create_flags_t const f = {})
 
 TORRENT_TEST(piece_size_restriction_16kB)
 {
+	// v2 torrents must have piece sizes of at least 16 kiB
 	TEST_EQUAL(test_piece_size(15000), 16 * 1024);
 	TEST_EQUAL(test_piece_size(500), 16 * 1024);
 	TEST_THROW(test_piece_size(15000, lt::create_torrent::v1_only));
@@ -131,12 +129,21 @@ TORRENT_TEST(piece_size_restriction_16kB)
 
 TORRENT_TEST(piece_size_quanta)
 {
+	// v2 torrents must have power-of-two piece sizes
 	TEST_EQUAL(test_piece_size(32 * 1024), 32 * 1024);
 	TEST_EQUAL(test_piece_size(32 * 1024, lt::create_torrent::v1_only), 32 * 1024);
 	TEST_THROW(test_piece_size(48 * 1024));
 	TEST_EQUAL(test_piece_size(48 * 1024, lt::create_torrent::v1_only), 48 * 1024);
 	TEST_THROW(test_piece_size(47 * 1024, lt::create_torrent::v1_only));
 	TEST_THROW(test_piece_size(47 * 1024));
+}
+
+TORRENT_TEST(piece_size_limit)
+{
+	// the max piece size is determined by piece_picker::max_blocks_per_piece
+	TEST_EQUAL(test_piece_size(0x8000000), 0x8000000);
+	TEST_THROW(test_piece_size(0x8000001, lt::create_torrent::v1_only));
+	TEST_THROW(test_piece_size(0x10000000));
 }
 
 TORRENT_TEST(create_torrent_round_trip)
@@ -151,6 +158,7 @@ TORRENT_TEST(create_torrent_round_trip)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	lt::torrent_info info2(buffer, lt::from_span);
 
 	TEST_EQUAL(info2.comment(), "this is a test comment");
@@ -180,6 +188,7 @@ void test_round_trip_torrent(std::string const& name)
 	std::vector<char> out_buffer;
 	lt::entry e = t.generate();
 	lt::bencode(std::back_inserter(out_buffer), e);
+	TEST_CHECK(out_buffer == t.generate_buf());
 
 	lt::bdecode_node out_torrent = lt::bdecode(out_buffer);
 
@@ -198,9 +207,19 @@ TORRENT_TEST(create_torrent_round_trip_v2)
 	test_round_trip_torrent("v2_only.torrent");
 }
 
+TORRENT_TEST(create_torrent_round_trip_hybrid_missing_tailpad)
+{
+	test_round_trip_torrent("v2_hybrid-missing-tailpad.torrent");
+}
+
 TORRENT_TEST(create_torrent_round_trip_hybrid)
 {
 	test_round_trip_torrent("v2_hybrid.torrent");
+}
+
+TORRENT_TEST(create_torrent_round_trip_empty_file)
+{
+	test_round_trip_torrent("v2_empty_file.torrent");
 }
 
 // check that attempting to create a torrent containing both
@@ -235,6 +254,7 @@ TORRENT_TEST(v2_path_conflict)
 		t.set_hash2(2_file, zero, dummy);
 		t.set_hash2(3_file, zero, dummy);
 		TEST_THROW(t.generate());
+		TEST_THROW(t.generate_buf());
 	}
 }
 
@@ -255,6 +275,7 @@ TORRENT_TEST(v2_only)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	lt::torrent_info info(buffer, lt::from_span);
 	TEST_CHECK(info.info_hashes().has_v2());
 	TEST_CHECK(!info.info_hashes().has_v1());
@@ -266,6 +287,7 @@ TORRENT_TEST(v2_only)
 	lt::create_torrent t2(info);
 	std::vector<char> buffer2;
 	lt::bencode(std::back_inserter(buffer2), t2.generate());
+	TEST_CHECK(buffer2 == t2.generate_buf());
 
 	TEST_CHECK(buffer == buffer2);
 }
@@ -279,6 +301,7 @@ TORRENT_TEST(v2_only_set_hash)
 	TEST_THROW(t.set_hash(0_piece, lt::sha1_hash::max()));
 }
 
+#if TORRENT_HAS_SYMLINK || !defined TORRENT_WINDOWS
 namespace {
 
 void check(int ret)
@@ -290,6 +313,7 @@ void check(int ret)
 }
 
 }
+#endif
 
 #if TORRENT_HAS_SYMLINK
 
@@ -316,6 +340,7 @@ TORRENT_TEST(create_torrent_symlink)
 
 	std::vector<char> torrent;
 	lt::bencode(back_inserter(torrent), t.generate());
+	TEST_CHECK(torrent == t.generate_buf());
 
 	lt::torrent_info ti(torrent, lt::from_span);
 
@@ -394,6 +419,7 @@ TORRENT_TEST(implicit_v2_only)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	lt::torrent_info info(buffer, lt::from_span);
 	TEST_CHECK(info.info_hashes().has_v2());
 	TEST_CHECK(!info.info_hashes().has_v1());
@@ -417,6 +443,7 @@ TORRENT_TEST(implicit_v1_only)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	lt::torrent_info info(buffer, lt::from_span);
 	TEST_CHECK(!info.info_hashes().has_v2());
 	TEST_CHECK(info.info_hashes().has_v1());
@@ -441,6 +468,7 @@ lt::torrent_info test_field(Fun f)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	return lt::torrent_info(buffer, lt::from_span);
 }
 }
@@ -518,6 +546,7 @@ TORRENT_TEST(piece_layer)
 
 	std::vector<char> buffer;
 	lt::bencode(std::back_inserter(buffer), t.generate());
+	TEST_CHECK(buffer == t.generate_buf());
 	lt::torrent_info info(buffer, lt::from_span);
 
 	TEST_CHECK(info.piece_layer(0_file).size() == lt::sha256_hash::size() * 2);
@@ -547,4 +576,305 @@ TORRENT_TEST(pieces_root_empty_file)
 
 	TEST_CHECK(info.files().root(0_file).is_all_zeros());
 	TEST_CHECK(!info.files().root(1_file).is_all_zeros());
+}
+
+namespace {
+
+std::string test_create_torrent(lt::file_storage& fs, int const piece_size
+	, lt::create_flags_t const flags)
+{
+	lt::create_torrent ct(fs, piece_size, flags);
+	ct.set_creation_date(1337);
+	if (!(flags & lt::create_torrent::v2_only))
+		for (lt::piece_index_t i : fs.piece_range())
+			ct.set_hash(i, lt::sha1_hash::max());
+	if (!(flags & lt::create_torrent::v1_only))
+		for (auto const f : fs.file_range())
+			if (!fs.pad_file_at(f))
+				for (auto const p : fs.file_piece_range(f))
+					ct.set_hash2(f, p, lt::sha256_hash::max());
+	auto e = ct.generate();
+	std::string buf;
+	lt::bencode(std::back_inserter(buf), e);
+	std::vector<char> buf2;
+	lt::bencode(std::back_inserter(buf2), e);
+	TEST_CHECK(buf2 == ct.generate_buf());
+	return buf;
+}
+
+}
+
+TORRENT_TEST(v1_tail_padding)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only | lt::create_torrent::canonical_files)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+// padding goes before empty files, not after
+TORRENT_TEST(v1_empty_file_placement)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-empty", 0);
+	fs.add_file("test/3-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only | lt::create_torrent::canonical_files)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi0e4:pathl7:2-emptyee"
+		"d6:lengthi16383e4:pathl7:3-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+// despite the files being added in one order, the torrent is still created with
+// files in the canonical order
+TORRENT_TEST(v1_file_sorting)
+{
+	lt::file_storage fs;
+	fs.add_file("test/2-small", 0x3fff);
+	fs.add_file("test/1-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only | lt::create_torrent::canonical_files)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+// This is a backwards compatibility feature
+TORRENT_TEST(v1_no_tail_padding)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only | lt::create_torrent::canonical_files_no_tail_padding)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+// padding goes after empty files in backwards compatibility mode
+TORRENT_TEST(v1_empty_file_placement_backwards_compatibility)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-empty", 0);
+	fs.add_file("test/3-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only | lt::create_torrent::canonical_files_no_tail_padding)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d6:lengthi0e4:pathl7:2-emptyee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:3-smallee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+// the v1_only flag does not arrange files canonically (i.e. no ordering nor
+// padding)
+TORRENT_TEST(v1_no_padding)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v1_only)
+		, "d13:creation datei1337e4:infod5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee");
+}
+
+TORRENT_TEST(hybrid)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, {})
+		, "d13:creation datei1337e4:infod"
+		"9:file tree"
+		"d7:1-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"7:2-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"e"
+		"5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"e"
+		"12:meta versioni2e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"e"
+		"12:piece layersde"
+		"e");
+}
+
+TORRENT_TEST(hybrid_single_file)
+{
+	lt::file_storage fs;
+	fs.add_file("1-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, {})
+		, "d13:creation datei1337e4:infod"
+		"9:file tree"
+		"d7:1-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"e"
+		"6:lengthi16383e"
+		"12:meta versioni2e"
+		"4:name7:1-small12:piece lengthi16384e"
+		"6:pieces20:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"e"
+		"12:piece layersde"
+		"e");
+}
+
+TORRENT_TEST(hybrid_single_file_with_directory)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, {})
+		, "d13:creation datei1337e4:infod"
+		"9:file tree"
+		"d7:1-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"e"
+		"5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"e"
+		"12:meta versioni2e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces20:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"e"
+		"12:piece layersde"
+		"e");
+}
+
+// this is a backwards compatibility feature
+TORRENT_TEST(hybrid_no_tail_padding)
+{
+	lt::file_storage fs;
+	fs.add_file("test/1-small", 0x3fff);
+	fs.add_file("test/2-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::canonical_files_no_tail_padding)
+		, "d13:creation datei1337e4:infod"
+		"9:file tree"
+		"d7:1-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"7:2-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"e"
+		"5:filesl"
+		"d6:lengthi16383e4:pathl7:1-smallee"
+		"d4:attr1:p6:lengthi1e4:pathl4:.pad1:1ee"
+		"d6:lengthi16383e4:pathl7:2-smallee"
+		"e"
+		"12:meta versioni2e"
+		"4:name4:test12:piece lengthi16384e"
+		"6:pieces40:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"e"
+		"12:piece layersde"
+		"e");
+}
+
+TORRENT_TEST(v2_only_file_sorting)
+{
+	lt::file_storage fs;
+	fs.add_file("test/2-small", 0x3fff);
+	fs.add_file("test/1-small", 0x3fff);
+	TEST_EQUAL(test_create_torrent(fs, 0x4000, lt::create_torrent::v2_only)
+		, "d13:creation datei1337e4:infod"
+		"9:file tree"
+		"d7:1-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"7:2-smalld0:d6:lengthi16383e11:pieces root32:"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+		"ee"
+		"e"
+		"12:meta versioni2e"
+		"4:name4:test12:piece lengthi16384e"
+		"e"
+		"12:piece layersde"
+		"e");
 }

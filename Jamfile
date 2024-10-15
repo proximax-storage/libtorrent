@@ -12,7 +12,7 @@ import cast ;
 
 # we need version numbers in the form X.Y.Z in order to trigger the built-in
 # support for generating symlinks to the installed library
-VERSION = 2.0.4 ;
+VERSION = 2.0.11 ;
 
 BOOST_ROOT = [ modules.peek : BOOST_ROOT ] ;
 CXXFLAGS = [ modules.peek : CXXFLAGS ] ;
@@ -21,6 +21,8 @@ LDFLAGS = [ modules.peek : LDFLAGS ] ;
 ECHO "CXXFLAGS =" $(CXXFLAGS) ;
 ECHO "LDFLAGS =" $(LDFLAGS) ;
 ECHO "OS =" [ os.name ] ;
+
+jam-version = [ modules.peek : JAM_VERSION ] ;
 
 if $(BOOST_ROOT)
 {
@@ -45,8 +47,7 @@ else
 	lib boost_system : : <target-os>darwin <name>boost_system-mt $(boost-lib-search-path)
 		: : $(boost-include-path) ;
 
-	lib boost_system : : <name>boost_system $(boost-lib-search-path)
-		: : $(boost-include-path) ;
+	lib boost_system : : <name>boost_system ;
 }
 
 use-project /try_signal : ./deps/try_signal ;
@@ -65,6 +66,17 @@ rule linking ( properties * )
 			|| <asio-debugging>on in $(properties) )
 	{
 		result += <library>dbghelp ;
+	}
+
+	if <target-os>windows in $(properties)
+	{
+		switch [ feature.get-values <windows-version> : $(properties) ]
+		{
+			case xp : result += <define>_WIN32_WINNT=0x0501 ;
+			case vista : result += <define>_WIN32_WINNT=0x0600 ;
+			case win7 : result += <define>_WIN32_WINNT=0x0601 ;
+			case win10 : result += <define>_WIN32_WINNT=0x0A00 ;
+		}
 	}
 
 	# gcrypt libraries, if enabled
@@ -154,8 +166,15 @@ rule linking ( properties * )
 		result += <framework>CoreFoundation <framework>SystemConfiguration ;
 	}
 
-	if ( <toolset>gcc in $(properties)
-			|| <toolset>clang in $(properties) )
+	if <target-os>iphone in $(properties)
+	{
+		# boost.asio seems to mis-detect iOS as supporting the __thread
+		# keyword, resulting in the error:
+		# error: thread-local storage is not supported for the current target
+		result += <define>BOOST_ASIO_DISABLE_THREAD_KEYWORD_EXTENSION ;
+	}
+
+	if <toolset>gcc in $(properties)
 		&& <target-os>linux in $(properties)
 		&& ( <asserts>on in $(properties)
 			|| <asserts>production in $(properties)
@@ -163,7 +182,14 @@ rule linking ( properties * )
 	{
 		# for backtraces in assertion failures
 		# which only works on ELF targets with gcc
-		result += <linkflags>-Wl,-export-dynamic <linkflags>-rdynamic ;
+		result += <linkflags>-Wl,--export-dynamic <linkflags>-rdynamic ;
+	}
+	else if [ version.version-less $(jam-version) : 1990 0 ]
+	{
+		# the visibility feature was introduced in boost-1.69. This was close to
+		# when the versioning scheme changed from year to (low) version numbers.
+		# in boost-1.70
+		result += <visibility>hidden ;
 	}
 
 	if <boost-link>static in $(properties)
@@ -199,6 +225,13 @@ rule linking ( properties * )
 		result += <library>boost_system ;
 	}
 
+	if ! <target-os>windows in $(properties)
+	{
+		# MingW defines a macro called "stat" if this is set, which causes build
+		# failures
+		result += <define>_FILE_OFFSET_BITS=64 ;
+	}
+
 	result += <define>BOOST_ALL_NO_LIB
 		<define>BOOST_MULTI_INDEX_DISABLE_SERIALIZATION
 		<define>BOOST_SYSTEM_NO_DEPRECATED
@@ -228,26 +261,30 @@ rule warnings ( properties * )
 	if <toolset>clang in $(properties)
 		|| <toolset>darwin in $(properties)
 	{
-		result += <cflags>-Weverything ;
-		result += <cflags>-Wno-documentation ;
+		result += <cxxflags>-Weverything ;
+		result += <cxxflags>-Wno-documentation ;
 		result += <cxxflags>-Wno-c++98-compat-pedantic ;
 		result += <cxxflags>-Wno-c++11-compat-pedantic ;
-		result += <cflags>-Wno-padded ;
-		result += <cflags>-Wno-alloca ;
-		result += <cflags>-Wno-global-constructors ;
-		result += <cflags>-Wno-poison-system-directories ;
+		result += <cxxflags>-Wno-padded ;
+		result += <cxxflags>-Wno-alloca ;
+		result += <cxxflags>-Wno-global-constructors ;
+		result += <cxxflags>-Wno-poison-system-directories ;
 # this warns on any global static object, which are used for error_category
 # objects
-		result += <cflags>-Wno-exit-time-destructors ;
+		result += <cxxflags>-Wno-exit-time-destructors ;
 
 # enable these warnings again, once the other ones are dealt with
-		result += <cflags>-Wno-weak-vtables ;
+		result += <cxxflags>-Wno-weak-vtables ;
 
-		result += <cflags>-Wno-return-std-move-in-c++11 ;
-		result += <cflags>-Wno-unknown-warning-option ;
+		result += <cxxflags>-Wno-return-std-move-in-c++11 ;
+		result += <cxxflags>-Wno-unknown-warning-option ;
 
 # libtorrent uses alloca() carefully
-		result += <cflags>-Wno-alloca ;
+		result += <cxxflags>-Wno-alloca ;
+
+# these warnings should all be addressed. Either by transitioning to span and
+# array, or by suppressing the warning for specific code
+		result += <cxxflags>-Wno-unsafe-buffer-usage ;
 	}
 
 	if <toolset>gcc in $(properties)
@@ -255,12 +292,9 @@ rule warnings ( properties * )
 		result += <cflags>-Wall ;
 		result += <cflags>-Wextra ;
 		result += <cflags>-Wpedantic ;
-#		result += <cflags>-Wmisleading-indentation ;
-		result += <cflags>-Wparentheses ;
 		result += <cflags>-Wvla ;
-		result += <cxxflags>-Wno-c++11-compat ;
 		result += <cflags>-Wno-format-zero-length ;
-		result += <cflags>-Wno-noexcept-type ;
+		result += <cxxflags>-Wno-noexcept-type ;
 	}
 
 	if <toolset>msvc in $(properties)
@@ -271,16 +305,16 @@ rule warnings ( properties * )
 # enable these warnings again, once the other ones are dealt with
 
 # disable warning C4251: 'identifier' : class 'type' needs to have dll-interface to be used by clients of class 'type2'
-		result += <cflags>/wd4251 ;
+		result += <cxxflags>/wd4251 ;
 # disable warning C4275: non DLL-interface classkey 'identifier' used as base for DLL-interface classkey 'identifier'
-		result += <cflags>/wd4275 ;
+		result += <cxxflags>/wd4275 ;
 # disable warning C4373: virtual function overrides, previous versions of the compiler did not override when parameters only differed by const/volatile qualifiers
-		result += <cflags>/wd4373 ;
+		result += <cxxflags>/wd4373 ;
 		# C4268: 'identifier' : 'const' static/global data initialized
 		#        with compiler generated default constructor fills the object with zeros
-		result += <cflags>/wd4268 ;
+		result += <cxxflags>/wd4268 ;
 		# C4503: 'identifier': decorated name length exceeded, name was truncated
-		result += <cflags>/wd4503 ;
+		result += <cxxflags>/wd4503 ;
 	}
 
 	return $(result) ;
@@ -299,8 +333,8 @@ rule building ( properties * )
 		result += <build>no ;
 	}
 
-	local VERSION = [ feature.get-values <cxxstd> : $(properties) ] ;
-	if ! $(VERSION) || $(VERSION) < 14
+	local CXXVER = [ feature.get-values <cxxstd> : $(properties) ] ;
+	if ! $(CXXVER) || $(CXXVER) < 14
 	{
 		ECHO "libtorrent requires at least C++14. Specify cxxstd=14 or higher" ;
 		result += <build>no ;
@@ -310,12 +344,23 @@ rule building ( properties * )
 	{
 		# allow larger .obj files (with more sections)
 		result += <cxxflags>/bigobj ;
+
+		# https://docs.microsoft.com/en-us/cpp/build/reference/utf-8-set-source-and-executable-character-sets-to-utf-8?view=msvc-170
+		result += <cxxflags>/utf-8 ;
+
+		# two-phase lookup is not supported by C++/CX on msvc, so it needs to be
+		# disabled. We can't set permissive- in that case
+		if ! <windows-api>store in $(properties)
+		{
+			# https://learn.microsoft.com/en-us/cpp/build/reference/permissive-standards-conformance?view=msvc-170
+			result += <cxxflags>/permissive- ;
+		}
 	}
 
 	if <toolset>gcc in $(properties) && <target-os>windows in $(properties)
 	{
 		# allow larger .obj files (with more sections)
-		result += <cflags>-Wa,-mbig-obj ;
+		result += <cxxflags>-Wa,-mbig-obj ;
 	}
 
 	if ( <asserts>production in $(properties)
@@ -399,6 +444,7 @@ rule openssl-lib-path ( properties * )
 		local address_model = [ feature.get-values <address-model> : $(properties) ] ;
 		OPENSSL_LIB += "C:/Program Files/OpenSSL-Win$(address_model)/lib" ;
 		OPENSSL_LIB += "C:/Program Files (x86)/OpenSSL-Win$(address_model)/lib" ;
+		OPENSSL_LIB += "C:/Program Files/OpenSSL/lib" ;
 	}
 
 	local result ;
@@ -426,6 +472,7 @@ rule openssl-include-path ( properties * )
 		local address_model = [ feature.get-values <address-model> : $(properties) ] ;
 		OPENSSL_INCLUDE += "C:/Program Files/OpenSSL-Win$(address_model)/include" ;
 		OPENSSL_INCLUDE += "C:/Program Files (x86)/OpenSSL-Win$(address_model)/include" ;
+		OPENSSL_INCLUDE += "C:/Program Files/OpenSSL/include" ;
 	}
 
 	local result ;
@@ -441,9 +488,10 @@ rule gnutls-lib-path ( properties * )
 
 	if <target-os>darwin in $(properties) && $(GNUTLS_LIB) = ""
 	{
-		# on macOS, default to pick up gnutls from the homebrew installation
-		# brew install gnutls
-		GNUTLS_LIB = /usr/local/opt/gnutls/lib ;
+		# on macOS, default to pick up openssl from the homebrew installation
+		# brew install openssl
+		# homebrew on M1 Macs install to /opt/homebrew
+		GNUTLS_LIB = /opt/homebrew/opt/gnutls/lib /usr/local/opt/gnutls/lib ;
 	}
 
 	local result ;
@@ -459,9 +507,10 @@ rule gnutls-include-path ( properties * )
 
 	if <target-os>darwin in $(properties) && $(GNUTLS_INCLUDE) = ""
 	{
-		# on macOS, default to pick up gnutls from the homebrew installation
-		# brew install gnutls
-		GNUTLS_INCLUDE = /usr/local/opt/gnutls/include ;
+		# on macOS, default to pick up openssl from the homebrew installation
+		# brew install openssl
+		# homebrew on M1 Macs install to /opt/homebrew
+		GNUTLS_INCLUDE = /opt/homebrew/opt/gnutls/include /usr/local/opt/gnutls/include ;
 	}
 
 	local result ;
@@ -516,7 +565,7 @@ feature wolfssl-lib : : free path ;
 feature wolfssl-include : : free path ;
 
 feature test-coverage : off on : composite propagated link-incompatible ;
-feature.compose <test-coverage>on : <cflags>--coverage <linkflags>--coverage ;
+feature.compose <test-coverage>on : <cxxflags>--coverage <linkflags>--coverage ;
 
 feature predictive-pieces : on off : composite propagated ;
 feature.compose <predictive-pieces>off : <define>TORRENT_DISABLE_PREDICTIVE_PIECES ;
@@ -539,11 +588,7 @@ feature.compose <asserts>on : <define>TORRENT_USE_ASSERTS=1 ;
 feature.compose <asserts>production : <define>TORRENT_USE_ASSERTS=1 <define>TORRENT_PRODUCTION_ASSERTS=1 ;
 feature.compose <asserts>system : <define>TORRENT_USE_ASSERTS=1 <define>TORRENT_USE_SYSTEM_ASSERTS=1 ;
 
-feature windows-version : vista win7 win10 xp : composite propagated ;
-feature.compose <windows-version>vista : <define>_WIN32_WINNT=0x0600 ;
-feature.compose <windows-version>win7 : <define>_WIN32_WINNT=0x0601 ;
-feature.compose <windows-version>win10 : <define>_WIN32_WINNT=0x0A00 ;
-feature.compose <windows-version>xp : <define>_WIN32_WINNT=0x0501 ;
+feature windows-version : win10 vista xp win7 : composite propagated ;
 
 feature extensions : on off : composite propagated link-incompatible ;
 feature.compose <extensions>off : <define>TORRENT_DISABLE_EXTENSIONS ;
@@ -569,6 +614,9 @@ feature.compose <utp-log>on : <define>TORRENT_UTP_LOG_ENABLE ;
 
 feature simulate-slow-read : off on : composite propagated ;
 feature.compose <simulate-slow-read>on : <define>TORRENT_SIMULATE_SLOW_READ ;
+
+feature simulate-slow-write : off on : composite propagated ;
+feature.compose <simulate-slow-write>on : <define>TORRENT_SIMULATE_SLOW_WRITE ;
 
 feature logging : on off : composite propagated link-incompatible ;
 feature.compose <logging>off : <define>TORRENT_DISABLE_LOGGING ;
@@ -623,7 +671,7 @@ feature.compose <debug-iterators>on : <define>_GLIBCXX_DEBUG <define>_GLIBCXX_DE
 feature.compose <debug-iterators>off : <define>_ITERATOR_DEBUG_LEVEL=0 ;
 
 feature fpic : off on : composite propagated link-incompatible ;
-feature.compose <fpic>on : <cflags>-fPIC ;
+feature.compose <fpic>on : <cxxflags>-fPIC ;
 
 feature profile-calls : off on : composite propagated link-incompatible ;
 feature.compose <profile-calls>on : <define>TORRENT_PROFILE_CALLS=1 ;
@@ -636,6 +684,10 @@ feature export-extra : off on : composite propagated ;
 # this is off by default to keep the export
 # symbol table reasonably small
 feature.compose <export-extra>on : <define>TORRENT_EXPORT_EXTRA ;
+
+feature msvc-version-macro : off on : composite propagated link-incompatible ;
+# ask the compiler to correctly set __cplusplus version
+feature.compose <msvc-version-macro>on : <cxxflags>/Zc\:__cplusplus ;
 
 lib advapi32 : : <name>advapi32 ;
 lib user32 : : <name>user32 ;
@@ -707,6 +759,7 @@ SOURCES =
 	chained_buffer
 	choker
 	close_reason
+	copy_file
 	cpuid
 	crc32c
 	create_torrent
@@ -714,11 +767,11 @@ SOURCES =
 	disk_buffer_holder
 	disk_buffer_pool
 	disk_interface
-	disk_io_job
 	disk_io_thread_pool
 	disabled_disk_io
 	disk_job_fence
 	disk_job_pool
+	drive_info
 	entry
 	error_code
 	file_storage
@@ -816,11 +869,14 @@ SOURCES =
 	generate_peer_id
 	mmap
 	mmap_disk_io
+	mmap_disk_job
 	mmap_storage
 	posix_disk_io
 	posix_part_file
 	posix_storage
 	ssl
+	truncate
+	load_torrent
 
 # -- extensions --
 	ut_pex
@@ -868,7 +924,6 @@ local usage-requirements =
 	<include>./include
 	<include>./include/libtorrent
 	<variant>release:<define>NDEBUG
-	<define>_FILE_OFFSET_BITS=64
 # enable cancel support in asio
 	<define>BOOST_ASIO_ENABLE_CANCELIO
 # make sure asio uses std::chrono
@@ -915,7 +970,6 @@ lib torrent
 	<threading>multi
 	<cxxstd>14
 	<c++-template-depth>512
-	<visibility>hidden
 
 	: # usage requirements
 	$(usage-requirements)
@@ -934,8 +988,10 @@ rule install-paths ( properties * )
 	# package.paths was introduced in boost-1.70 (2018.02)
 	# however, boost build's versioning scheme changed in boost-1.71 to version
 	# 4.0
-	local boost-build-version = [ SPLIT_BY_CHARACTERS [ version.boost-build ] : "-" ] ;
-	if [ version.version-less [ SPLIT_BY_CHARACTERS $(boost-build-version[1]) : "." ] : 2018 03 ]
+	# so, if versions are 4.0+ we want to use package.paths, but if it's a year,
+	# say 2018, that means it's old and we use the fallback below. Any version <
+	# 1990 is considered the 4.0 and later numbering scheme.
+	if [ version.version-less 1990 0 : $(jam-version) ]
 	{
 		import option ;
 		import property ;
@@ -972,12 +1028,10 @@ rule generate-pkg-config ( properties * )
 	local libname = [ $(props[2]).name ] ;
 	props = $(props[1]) ;
 
-	local FULL_VERSION = 1.2.14 ;
-
 	p = [ install-paths $(properties) ] ;
 
-	local libdir = $(p[0]) ;
-	local includes = $(p[1]) ;
+	local libdir = $(p[1]) ;
+	local includes = $(p[2]) ;
 
 	local defines ;
 	local shared_deps ;

@@ -1,10 +1,10 @@
 /*
 
-Copyright (c) 2005, 2007-2010, 2012-2020, Arvid Norberg
-Copyright (c) 2016, 2018, 2020, Alden Torres
-Copyright (c) 2016, Vladimir Golovnev
-Copyright (c) 2016-2018, Steven Siloti
+Copyright (c) 2005, 2007-2010, 2012-2022, Arvid Norberg
+Copyright (c) 2016, 2018, Alden Torres
 Copyright (c) 2016, Andrei Kurushin
+Copyright (c) 2016-2018, Steven Siloti
+Copyright (c) 2016, Vladimir Golovnev
 Copyright (c) 2018, d-komarov
 All rights reserved.
 
@@ -51,13 +51,13 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/torrent_info.hpp"
 #include "libtorrent/read_resume_data.hpp"
 #include "libtorrent/write_resume_data.hpp"
-#include "libtorrent/aux_/disk_io_job.hpp"
 #include "libtorrent/aux_/path.hpp"
 #include "libtorrent/aux_/storage_utils.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
 #include "libtorrent/random.hpp"
 #include "libtorrent/mmap_disk_io.hpp"
 #include "libtorrent/posix_disk_io.hpp"
+#include "libtorrent/flags.hpp"
 
 #include <memory>
 #include <functional> // for bind
@@ -81,8 +81,10 @@ namespace aux {
 
 namespace {
 
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
+using lt::mmap_storage;
+#endif
 using lt::aux::posix_storage;
-using lt::aux::disk_io_job;
 
 constexpr int piece_size = 16 * 1024 * 16;
 constexpr int half = piece_size / 2;
@@ -100,24 +102,37 @@ void delete_dirs(std::string path)
 	TEST_CHECK(!exists(path));
 }
 
-void on_check_resume_data(lt::status_t const status, storage_error const& error, bool* done)
+void on_check_resume_data(lt::status_t const status, storage_error const& error, bool* done, bool* oversized)
 {
 	std::cout << time_now_string() << " on_check_resume_data ret: "
 		<< static_cast<int>(status);
-	switch (status)
+	if ((status & lt::status_t::oversized_file) != status_t{})
+	{
+		std::cout << " oversized file(s) - ";
+		*oversized = true;
+	}
+	else
+	{
+		*oversized = false;
+	}
+
+	switch (status & ~lt::status_t::mask)
 	{
 		case lt::status_t::no_error:
-			std::cout << time_now_string() << " success" << std::endl;
+			std::cout << " success" << std::endl;
 			break;
 		case lt::status_t::fatal_disk_error:
-			std::cout << time_now_string() << " disk error: " << error.ec.message()
+			std::cout << " disk error: " << error.ec.message()
 				<< " file: " << error.file() << std::endl;
 			break;
 		case lt::status_t::need_full_check:
-			std::cout << time_now_string() << " need full check" << std::endl;
+			std::cout << " need full check" << std::endl;
 			break;
 		case lt::status_t::file_exist:
-			std::cout << time_now_string() << " file exist" << std::endl;
+			std::cout << " file exist" << std::endl;
+			break;
+		case lt::status_t::mask:
+		case lt::status_t::oversized_file:
 			break;
 	}
 	std::cout << std::endl;
@@ -177,33 +192,50 @@ std::shared_ptr<torrent_info> setup_torrent_info(file_storage& fs
 	return info;
 }
 
+// file_pool_type is a meta function returning the file pool type for a specific
+// StorageType
+// maybe this would be easier to follow if it was all bundled up in a
+// traits class
+template <typename StorageType>
+struct file_pool_type {};
+
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
+template <>
+struct file_pool_type<mmap_storage>
+{
+	using type = aux::file_view_pool;
+};
+#endif
+
+template <>
+struct file_pool_type<posix_storage>
+{
+	using type = int;
+};
+
 template <typename StorageType>
 std::shared_ptr<StorageType> make_storage(storage_params const& p
-	, aux::file_view_pool& fp);
+	, typename file_pool_type<StorageType>::type& fp);
 
-#if TORRENT_HAVE_MMAP
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 template <>
 std::shared_ptr<mmap_storage> make_storage(storage_params const& p
 	, aux::file_view_pool& fp)
 {
 	return std::make_shared<mmap_storage>(p, fp);
 }
-#else
-template <>
-std::shared_ptr<mmap_storage> make_storage(storage_params const& p
-	, aux::file_view_pool& fp) = delete;
 #endif
 
 template <>
 std::shared_ptr<posix_storage> make_storage(storage_params const& p
-	, aux::file_view_pool&)
+	, int&)
 {
 	return std::make_shared<posix_storage>(p);
 }
 
-template <typename StorageType>
+template <typename StorageType, typename FilePool>
 std::shared_ptr<StorageType> setup_torrent(file_storage& fs
-	, aux::file_view_pool& fp
+	, FilePool& fp
 	, std::vector<char>& buf
 	, std::string const& test_path
 	, aux::session_settings& set)
@@ -236,26 +268,26 @@ std::shared_ptr<StorageType> setup_torrent(file_storage& fs
 	return s;
 }
 
-#if TORRENT_HAVE_MMAP
-int writev(std::shared_ptr<mmap_storage> s
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
+int write(std::shared_ptr<mmap_storage> s
 	, aux::session_settings const& sett
-	, span<iovec_t const> bufs
+	, span<char> buf
 	, piece_index_t const piece, int const offset
 	, aux::open_mode_t const mode
 	, storage_error& error)
 {
-	return s->writev(sett, bufs, piece, offset, mode, error);
+	return s->write(sett, buf, piece, offset, mode, disk_job_flags_t{}, error);
 }
 
-int readv(std::shared_ptr<mmap_storage> s
+int read(std::shared_ptr<mmap_storage> s
 	, aux::session_settings const& sett
-	, span<iovec_t const> bufs
+	, span<char> buf
 	, piece_index_t piece
 	, int const offset
-	, aux::open_mode_t flags
+	, aux::open_mode_t mode
 	, storage_error& ec)
 {
-	return s->readv(sett, bufs, piece, offset, flags, ec);
+	return s->read(sett, buf, piece, offset, mode, disk_job_flags_t{}, ec);
 }
 
 void release_files(std::shared_ptr<mmap_storage> s, storage_error& ec)
@@ -264,26 +296,26 @@ void release_files(std::shared_ptr<mmap_storage> s, storage_error& ec)
 }
 #endif
 
-int writev(std::shared_ptr<posix_storage> s
+int write(std::shared_ptr<posix_storage> s
 	, aux::session_settings const& sett
-	, span<iovec_t const> bufs
+	, span<char> buf
 	, piece_index_t const piece
 	, int const offset
 	, aux::open_mode_t
 	, storage_error& error)
 {
-	return s->writev(sett, bufs, piece, offset, error);
+	return s->write(sett, buf, piece, offset, error);
 }
 
-int readv(std::shared_ptr<posix_storage> s
+int read(std::shared_ptr<posix_storage> s
 	, aux::session_settings const& sett
-	, span<iovec_t const> bufs
+	, span<char> buf
 	, piece_index_t piece
 	, int offset
 	, aux::open_mode_t
 	, storage_error& ec)
 {
-	return s->readv(sett, bufs, piece, offset, ec);
+	return s->read(sett, buf, piece, offset, ec);
 }
 
 void release_files(std::shared_ptr<posix_storage>, storage_error&) {}
@@ -320,7 +352,7 @@ void run_storage_tests(std::shared_ptr<torrent_info> info
 
 	{
 	// avoid having two storages use the same files
-	aux::file_view_pool fp;
+	typename file_pool_type<StorageType>::type fp;
 	boost::asio::io_context ios;
 	aux::vector<download_priority_t, file_index_t> priorities;
 	sha1_hash info_hash;
@@ -343,60 +375,60 @@ void run_storage_tests(std::shared_ptr<torrent_info> info
 	int ret = 0;
 
 	// write piece 1 (in slot 0)
-	iovec_t iov = span<char>(piece1).first(half);
+	span<char> iov = span<char>(piece1).first(half);
 
-	ret = writev(s, set, iov, 0_piece, 0, aux::open_mode::write, ec);
+	ret = write(s, set, iov, 0_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("writev", ret, ec);
+	if (ret != int(iov.size())) print_error("write", ret, ec);
 
 	iov = span<char>(piece1).last(half);
-	ret = writev(s, set, iov, 0_piece, half, aux::open_mode::write, ec);
+	ret = write(s, set, iov, 0_piece, half, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("writev", ret, ec);
+	if (ret != int(iov.size())) print_error("write", ret, ec);
 
 	// test unaligned read (where the bytes are aligned)
 	iov = span<char>(piece).subspan(3, piece_size - 9);
-	ret = readv(s, set, iov, 0_piece, 3, aux::open_mode::write, ec);
+	ret = read(s, set, iov, 0_piece, 3, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("readv",ret, ec);
+	if (ret != int(iov.size())) print_error("read",ret, ec);
 	TEST_CHECK(iov == span<char>(piece1).subspan(3, piece_size - 9));
 
 	// test unaligned read (where the bytes are not aligned)
 	iov = span<char>(piece).first(piece_size - 9);
-	ret = readv(s, set, iov, 0_piece, 3, aux::open_mode::write, ec);
+	ret = read(s, set, iov, 0_piece, 3, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("readv", ret, ec);
+	if (ret != int(iov.size())) print_error("read", ret, ec);
 	TEST_CHECK(iov == span<char>(piece1).subspan(3, piece_size - 9));
 
 	// verify piece 1
 	iov = piece;
-	ret = readv(s, set, iov, 0_piece, 0, aux::open_mode::write, ec);
+	ret = read(s, set, iov, 0_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("readv", ret, ec);
+	if (ret != int(iov.size())) print_error("read", ret, ec);
 	TEST_CHECK(piece == piece1);
 
 	// do the same with piece 0 and 2 (in slot 1 and 2)
 	iov = piece0;
-	ret = writev(s, set, iov, 1_piece, 0, aux::open_mode::write, ec);
+	ret = write(s, set, iov, 1_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("writev", ret, ec);
+	if (ret != int(iov.size())) print_error("write", ret, ec);
 
 	iov = piece2;
-	ret = writev(s, set, iov, 2_piece, 0, aux::open_mode::write, ec);
+	ret = write(s, set, iov, 2_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("writev", ret, ec);
+	if (ret != int(iov.size())) print_error("write", ret, ec);
 
 	// verify piece 0 and 2
 	iov = piece;
-	ret = readv(s, set, iov, 1_piece, 0, aux::open_mode::write, ec);
+	ret = read(s, set, iov, 1_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(iov.size())) print_error("readv", ret, ec);
+	if (ret != int(iov.size())) print_error("read", ret, ec);
 	TEST_CHECK(piece == piece0);
 
 	iov = piece;
-	ret = readv(s, set, iov, 2_piece, 0, aux::open_mode::write, ec);
+	ret = read(s, set, iov, 2_piece, 0, aux::open_mode::write, ec);
 	TEST_EQUAL(ret, int(iov.size()));
-	if (ret != int(piece_size)) print_error("readv", ret, ec);
+	if (ret != int(piece_size)) print_error("read", ret, ec);
 	TEST_CHECK(piece == piece2);
 
 	release_files(s, ec);
@@ -410,7 +442,7 @@ void test_remove(std::string const& test_path)
 
 	file_storage fs;
 	std::vector<char> buf;
-	aux::file_view_pool fp;
+	typename file_pool_type<StorageType>::type fp;
 	io_context ios;
 
 	aux::session_settings set;
@@ -432,9 +464,9 @@ void test_remove(std::string const& test_path)
 		, combine_path("folder1", "test2.tmp")))));
 
 	buf.resize(0x4000);
-	iovec_t b = {&buf[0], 0x4000};
+	span<char> b = {&buf[0], 0x4000};
 	storage_error se;
-	writev(s, set, b, 2_piece, 0, aux::open_mode::write, se);
+	write(s, set, b, 2_piece, 0, aux::open_mode::write, se);
 
 	TEST_CHECK(exists(combine_path(test_path, combine_path("temp_storage"
 		, combine_path("folder1", "test2.tmp")))));
@@ -449,7 +481,7 @@ void test_remove(std::string const& test_path)
 	// 4
 	TEST_CHECK(st.file_size == 0x8000 || st.file_size == 0x4000);
 
-	writev(s, set, b, 0_piece, 0, aux::open_mode::write, se);
+	write(s, set, b, 0_piece, 0, aux::open_mode::write, se);
 
 	TEST_CHECK(exists(combine_path(test_path, combine_path("temp_storage"
 		, combine_path("_folder3", combine_path("subfolder", "test5.tmp"))))));
@@ -480,7 +512,7 @@ void test_rename(std::string const& test_path)
 
 	file_storage fs;
 	std::vector<char> buf;
-	aux::file_view_pool fp;
+	typename file_pool_type<StorageType>::type fp;
 	io_context ios;
 	aux::session_settings set;
 
@@ -507,9 +539,131 @@ void test_rename(std::string const& test_path)
 	TEST_EQUAL(s->files().file_path(0_file), "new_filename");
 }
 
-void test_check_files(std::string const& test_path
-	, lt::storage_mode_t storage_mode)
+namespace {
+std::int64_t file_size_on_disk(std::string const& path)
 {
+#ifdef TORRENT_WINDOWS
+	native_path_string f = convert_to_native_path_string(path);
+	// in order to open a directory, we need the FILE_FLAG_BACKUP_SEMANTICS
+	HANDLE h = CreateFileW(f.c_str(), 0, FILE_SHARE_DELETE | FILE_SHARE_READ
+		| FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	TEST_CHECK(h != INVALID_HANDLE_VALUE);
+	FILE_STANDARD_INFO Standard;
+	TEST_CHECK(GetFileInformationByHandleEx(h, FILE_INFO_BY_HANDLE_CLASS::FileStandardInfo, &Standard, sizeof(FILE_STANDARD_INFO)));
+	CloseHandle(h);
+	return Standard.AllocationSize.QuadPart;
+#else
+	struct ::stat st{};
+	TEST_EQUAL(::stat(path.c_str(), &st), 0);
+	return std::int64_t(st.st_blocks) * 512;
+#endif
+}
+}
+
+template <typename StorageType>
+void test_pre_allocate()
+{
+	std::string const test_path = complete("pre_allocate_test_path");
+	delete_dirs(combine_path(test_path, "temp_storage"));
+
+	file_storage fs;
+	std::vector<char> buf;
+	typename file_pool_type<StorageType>::type fp;
+	io_context ios;
+
+	aux::session_settings set;
+	std::shared_ptr<torrent_info> info = setup_torrent_info(fs, buf);
+
+	aux::vector<download_priority_t, file_index_t> priorities{
+		lt::dont_download,
+		lt::default_priority,
+		lt::default_priority,
+		lt::default_priority,
+		lt::default_priority,
+	};
+	sha1_hash info_hash;
+	storage_params p{
+		fs,
+		nullptr,
+		test_path,
+		storage_mode_allocate,
+		priorities,
+		info_hash
+	};
+	auto s = make_storage<StorageType>(p, fp);
+
+	// allocate the files and create the directories
+	storage_error se;
+	s->initialize(set, se);
+	if (se)
+	{
+		TEST_ERROR(se.ec.message().c_str());
+		std::printf("storage::initialize %s: %d\n"
+			, se.ec.message().c_str(), static_cast<int>(se.file()));
+		throw system_error(se.ec);
+	}
+
+	std::vector<char> piece1 = new_piece(0x4000);
+	span<char> iov = span<char>(piece1);
+
+	// ensure all files, except the first one, have been allocated
+	for (auto i : fs.file_range())
+	{
+		if (fs.file_size(i) > 0)
+		{
+			int ret = write(s, set, iov, fs.piece_index_at_file(i), 0, aux::open_mode::write, se);
+			TEST_EQUAL(ret, int(iov.size()));
+			TEST_CHECK(!se.ec);
+		}
+
+		error_code ec;
+		file_status st;
+		std::string const path = fs.file_path(i, test_path);
+		stat_file(path, &st, ec);
+		if (i == file_index_t{0})
+		{
+			// the first file has priority 0, and so should not be created
+			TEST_EQUAL(ec, boost::system::errc::no_such_file_or_directory);
+		}
+		else
+		{
+			TEST_CHECK(!ec);
+			std::cerr << "error: " << ec.message() << std::endl;
+			TEST_EQUAL(st.file_size, fs.file_size(i));
+			TEST_CHECK(file_size_on_disk(path) >= fs.file_size(i));
+		}
+	}
+
+	std::cerr << "set file priority" << std::endl;
+	// set priority of file 0 to non-zero, and make sure we create the file now
+	priorities[0_file] = lt::default_priority;
+	s->set_file_priority(set, priorities, se);
+	TEST_CHECK(!se.ec);
+
+	for (auto i : fs.file_range())
+	{
+		error_code ec;
+		file_status st;
+		std::string const path = fs.file_path(i, test_path);
+		stat_file(path, &st, ec);
+		std::cerr<< "error: " << ec.message() << std::endl;
+		TEST_CHECK(!ec);
+
+		TEST_CHECK(file_size_on_disk(path) >= fs.file_size(i));
+	}
+}
+
+using lt::operator""_bit;
+using check_files_flag_t = lt::flags::bitfield_flag<std::uint64_t, struct check_files_flag_type_tag>;
+
+constexpr check_files_flag_t sparse = 0_bit;
+constexpr check_files_flag_t test_oversized = 1_bit;
+constexpr check_files_flag_t zero_prio = 2_bit;
+
+void test_check_files(check_files_flag_t const flags
+	, lt::disk_io_constructor_type const disk_constructor)
+{
+	std::string const test_path = current_working_directory();
 	std::shared_ptr<torrent_info> info;
 
 	error_code ec;
@@ -533,10 +687,13 @@ void test_check_files(std::string const& test_path
 	create_directory(combine_path(test_path, "temp_storage"), ec);
 	if (ec) std::cout << "create_directory: " << ec.message() << std::endl;
 
+	if (flags & test_oversized)
+		piece2.push_back(0x42);
+
 	ofstream(combine_path(test_path, combine_path("temp_storage", "test1.tmp")).c_str())
-		.write(piece0.data(), piece_size_check);
+		.write(piece0.data(), std::streamsize(piece0.size()));
 	ofstream(combine_path(test_path, combine_path("temp_storage", "test3.tmp")).c_str())
-		.write(piece2.data(), piece_size_check);
+		.write(piece2.data(), std::streamsize(piece2.size()));
 
 	std::vector<char> buf;
 	bencode(std::back_inserter(buf), t.generate());
@@ -548,16 +705,19 @@ void test_check_files(std::string const& test_path
 
 	aux::session_settings sett;
 	sett.set_int(settings_pack::aio_threads, 1);
-	std::unique_ptr<disk_interface> io = default_disk_io_constructor(ios, sett, cnt);
+	std::unique_ptr<disk_interface> io = disk_constructor(ios, sett, cnt);
 
-	aux::vector<download_priority_t, file_index_t> priorities(
-		std::size_t(info->num_files()), download_priority_t{});
+	aux::vector<download_priority_t, file_index_t> priorities;
+
+	if (flags & zero_prio)
+		priorities.resize(std::size_t(info->num_files()), download_priority_t{});
+
 	sha1_hash info_hash;
 	storage_params p{
 		fs,
 		nullptr,
 		test_path,
-		storage_mode,
+		(flags & sparse) ? storage_mode_sparse : storage_mode_allocate,
 		priorities,
 		info_hash
 	};
@@ -565,13 +725,16 @@ void test_check_files(std::string const& test_path
 	auto st = io->new_torrent(std::move(p), std::shared_ptr<void>());
 
 	bool done = false;
+	bool oversized = false;
 	add_torrent_params frd;
 	aux::vector<std::string, file_index_t> links;
 	io->async_check_files(st, &frd, links
-		, std::bind(&on_check_resume_data, _1, _2, &done));
+		, std::bind(&on_check_resume_data, _1, _2, &done, &oversized));
 	io->submit_jobs();
 	ios.restart();
 	run_until(ios, done);
+
+	TEST_EQUAL(oversized, bool(flags & test_oversized));
 
 	for (auto const i : info->piece_range())
 	{
@@ -644,17 +807,62 @@ void run_test()
 	delete_dirs("temp_storage");
 }
 
-TORRENT_TEST(check_files_sparse)
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
+TORRENT_TEST(check_files_sparse_mmap)
 {
-	test_check_files(current_working_directory(), storage_mode_sparse);
+	test_check_files(sparse | zero_prio, lt::mmap_disk_io_constructor);
 }
 
-TORRENT_TEST(check_files_allocate)
+TORRENT_TEST(check_files_oversized_mmap_zero_prio)
 {
-	test_check_files(current_working_directory(), storage_mode_allocate);
+	test_check_files(sparse | zero_prio | test_oversized, lt::mmap_disk_io_constructor);
 }
 
-#if TORRENT_HAVE_MMAP
+TORRENT_TEST(check_files_oversized_mmap)
+{
+	test_check_files(sparse | test_oversized, lt::mmap_disk_io_constructor);
+}
+
+TORRENT_TEST(check_files_allocate_mmap)
+{
+	test_check_files(zero_prio, lt::mmap_disk_io_constructor);
+}
+
+TORRENT_TEST(test_pre_allocate_mmap)
+{
+	test_pre_allocate<mmap_storage>();
+}
+#endif
+TORRENT_TEST(check_files_sparse_posix)
+{
+	test_check_files(sparse | zero_prio, lt::posix_disk_io_constructor);
+}
+
+TORRENT_TEST(check_files_oversized_zero_prio_posix)
+{
+	test_check_files(sparse | zero_prio | test_oversized, lt::posix_disk_io_constructor);
+}
+
+TORRENT_TEST(check_files_oversized_posix)
+{
+	test_check_files(sparse | test_oversized, lt::posix_disk_io_constructor);
+}
+
+
+TORRENT_TEST(check_files_allocate_posix)
+{
+	test_check_files(zero_prio, lt::posix_disk_io_constructor);
+}
+
+// posix_storage doesn't support pre-allocating files on non-windows
+/*
+TORRENT_TEST(test_pre_allocate_posix)
+{
+	test_pre_allocate<posix_storage>();
+}
+*/
+
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 TORRENT_TEST(rename_mmap_disk_io)
 {
 	test_rename<mmap_storage>(current_working_directory());
@@ -724,7 +932,7 @@ void test_fastresume(bool const test_deprecated)
 		// the whole point of the test is to have a resume
 		// data which expects the file to exist in full. If
 		// we failed to do that, we might as well abort
-		TEST_EQUAL(s.progress, 1.0f);
+		TEST_EQUAL(int(s.progress * 1000), 1000);
 		if (s.progress != 1.0f)
 			return;
 
@@ -770,7 +978,7 @@ void test_fastresume(bool const test_deprecated)
 		p.storage_mode = storage_mode_sparse;
 		torrent_handle h = ses.add_torrent(std::move(p), ec);
 
-		std::printf("expecting fastresume to be rejected becase the files were removed");
+		std::printf("expecting fastresume to be rejected because the files were removed");
 		alert const* a = wait_for_alert(ses, fastresume_rejected_alert::alert_type
 			, "ses");
 		// we expect the fast resume to be rejected because the files were removed
@@ -997,26 +1205,13 @@ TORRENT_TEST(rename_file_fastresume_deprecated)
 
 namespace {
 
-void alloc_iov(iovec_t* iov, int num_bufs)
-{
-	for (std::size_t i = 0; i < static_cast<size_t>(num_bufs); ++i)
-	{
-		std::size_t const len = static_cast<std::size_t>(num_bufs) * (i + 1);
-		iov[i] = { new char[len], static_cast<std::ptrdiff_t>(len) };
-	}
-}
-
-// TODO: this should take a span of iovec_ts
-void fill_pattern(iovec_t* iov, int num_bufs)
+void fill_pattern(span<char> buf)
 {
 	int counter = 0;
-	for (int i = 0; i < num_bufs; ++i)
+	for (char& v : buf)
 	{
-		for (char& v : iov[i])
-		{
-			v = char(counter & 0xff);
-			++counter;
-		}
+		v = char(counter & 0xff);
+		++counter;
 	}
 }
 
@@ -1031,111 +1226,9 @@ bool check_pattern(std::vector<char> const& buf, int counter)
 	return true;
 }
 
-// TODO: this should take a span
-void free_iov(iovec_t* iov, int num_bufs)
-{
-	for (int i = 0; i < num_bufs; ++i)
-	{
-		delete[] iov[i].data();
-		iov[i] = { nullptr, 0 };
-	}
-}
-
 } // anonymous namespace
 
-TORRENT_TEST(iovec_copy_bufs)
-{
-	iovec_t iov1[10];
-	iovec_t iov2[10];
-
-	alloc_iov(iov1, 10);
-	fill_pattern(iov1, 10);
-
-	TEST_CHECK(bufs_size({iov1, 10}) >= 106);
-
-	// copy exactly 106 bytes from iov1 to iov2
-	int num_bufs = aux::copy_bufs(iov1, 106, iov2);
-
-	// verify that the first 100 bytes is pattern 1
-	// and that the remaining bytes are pattern 2
-
-	int counter = 0;
-	for (int i = 0; i < num_bufs; ++i)
-	{
-		for (char v : iov2[i])
-		{
-			TEST_EQUAL(int(v), (counter & 0xff));
-			++counter;
-		}
-	}
-	TEST_EQUAL(counter, 106);
-
-	free_iov(iov1, 10);
-}
-
-TORRENT_TEST(iovec_clear_bufs)
-{
-	iovec_t iov[10];
-	alloc_iov(iov, 10);
-	fill_pattern(iov, 10);
-
-	lt::aux::clear_bufs({iov, 10});
-	for (int i = 0; i < 10; ++i)
-	{
-		for (char v : iov[i])
-		{
-			TEST_EQUAL(int(v), 0);
-		}
-	}
-	free_iov(iov, 10);
-}
-
-TORRENT_TEST(iovec_bufs_size)
-{
-	iovec_t iov[10];
-
-	for (int i = 1; i < 10; ++i)
-	{
-		alloc_iov(iov, i);
-
-		int expected_size = 0;
-		for (int k = 0; k < i; ++k) expected_size += i * (k + 1);
-		TEST_EQUAL(bufs_size({iov, i}), expected_size);
-
-		free_iov(iov, i);
-	}
-}
-
-TORRENT_TEST(iovec_advance_bufs)
-{
-	iovec_t iov1[10];
-	iovec_t iov2[10];
-	alloc_iov(iov1, 10);
-	fill_pattern(iov1, 10);
-
-	memcpy(iov2, iov1, sizeof(iov1));
-
-	span<iovec_t> iov = iov2;
-
-	// advance iov 13 bytes. Make sure what's left fits pattern 1 shifted
-	// 13 bytes
-	iov = aux::advance_bufs(iov, 13);
-
-	// make sure what's in
-	int counter = 13;
-	for (auto buf : iov)
-	{
-		for (char v : buf)
-		{
-			TEST_EQUAL(v, static_cast<char>(counter));
-			++counter;
-		}
-	}
-
-	free_iov(iov1, 10);
-}
-
-#if TORRENT_HAVE_MMAP
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 TORRENT_TEST(mmap_disk_io) { run_test<mmap_storage>(); }
 #endif
 TORRENT_TEST(posix_disk_io) { run_test<posix_storage>(); }
@@ -1145,10 +1238,10 @@ namespace {
 file_storage make_fs()
 {
 	file_storage fs;
-	fs.add_file(combine_path("readwritev", "1"), 3);
-	fs.add_file(combine_path("readwritev", "2"), 9);
-	fs.add_file(combine_path("readwritev", "3"), 81);
-	fs.add_file(combine_path("readwritev", "4"), 6561);
+	fs.add_file(combine_path("readwrite", "1"), 3);
+	fs.add_file(combine_path("readwrite", "2"), 9);
+	fs.add_file(combine_path("readwrite", "3"), 81);
+	fs.add_file(combine_path("readwrite", "4"), 6561);
 	fs.set_piece_length(0x1000);
 	fs.set_num_pieces(aux::calc_num_pieces(fs));
 	return fs;
@@ -1159,7 +1252,7 @@ struct test_fileop
 	explicit test_fileop(int stripe_size) : m_stripe_size(stripe_size) {}
 
 	int operator()(file_index_t const file_index, std::int64_t const file_offset
-		, span<iovec_t const> bufs, storage_error&)
+		, span<char> buf, storage_error&)
 	{
 		std::size_t offset = size_t(file_offset);
 		if (file_index >= m_file_data.end_index())
@@ -1167,24 +1260,15 @@ struct test_fileop
 			m_file_data.resize(static_cast<int>(file_index) + 1);
 		}
 
-		std::size_t const write_size = std::size_t(std::min(m_stripe_size, bufs_size(bufs)));
+		std::size_t const write_size = std::size_t(std::min(m_stripe_size, int(buf.size())));
+		buf = buf.first(int(write_size));
 
 		std::vector<char>& file = m_file_data[file_index];
 
 		if (offset + write_size > file.size())
-		{
 			file.resize(offset + write_size);
-		}
 
-		int left = int(write_size);
-		while (left > 0)
-		{
-			std::size_t const copy_size = std::size_t(std::min(left, int(bufs.front().size())));
-			std::memcpy(&file[offset], bufs.front().data(), copy_size);
-			bufs = bufs.subspan(1);
-			offset += copy_size;
-			left -= int(copy_size);
-		}
+		std::memcpy(&file[offset], buf.data(), write_size);
 		return int(write_size);
 	}
 
@@ -1198,24 +1282,17 @@ struct test_read_fileop
 	explicit test_read_fileop(int size) : m_size(size), m_counter(0) {}
 
 	int operator()(file_index_t, std::int64_t /*file_offset*/
-		, span<iovec_t const> bufs, storage_error&)
+		, span<char> buf, storage_error&)
 	{
-		int local_size = std::min(m_size, bufs_size(bufs));
-		const int read = local_size;
-		while (local_size > 0)
+		if (buf.size() > m_size)
+			buf = buf.first(m_size);
+		for (char& v : buf)
 		{
-			int const len = std::min(int(bufs.front().size()), local_size);
-			auto local_buf = bufs.front().first(len);
-			for (char& v : local_buf)
-			{
-				v = char(m_counter & 0xff);
-				++m_counter;
-			}
-			local_size -= len;
-			m_size -= len;
-			bufs = bufs.subspan(1);
+			v = char(m_counter & 0xff);
+			++m_counter;
 		}
-		return read;
+		m_size -= int(buf.size());
+		return int(buf.size());
 	}
 
 	int m_size;
@@ -1229,7 +1306,7 @@ struct test_error_fileop
 		: m_error_file(error_file) {}
 
 	int operator()(file_index_t const file_index, std::int64_t /*file_offset*/
-		, span<iovec_t const> bufs, storage_error& ec)
+		, span<char> buf, storage_error& ec)
 	{
 		if (m_error_file == file_index)
 		{
@@ -1237,48 +1314,26 @@ struct test_error_fileop
 			ec.ec.assign(boost::system::errc::permission_denied
 				, boost::system::generic_category());
 			ec.operation = operation_t::file_read;
-			return -1;
+			return 0;
 		}
-		return bufs_size(bufs);
+		return int(buf.size());
 	}
 
 	file_index_t m_error_file;
 };
 
-int count_bufs(iovec_t const* bufs, int bytes)
-{
-	int size = 0;
-	int count = 1;
-	if (bytes == 0) return 0;
-	for (iovec_t const* i = bufs;; ++i, ++count)
-	{
-		size += int(i->size());
-		if (size >= bytes) return count;
-	}
-}
-
 } // anonymous namespace
 
-TORRENT_TEST(readwritev_stripe_1)
+TORRENT_TEST(readwrite_stripe_1)
 {
-	const int num_bufs = 30;
-	iovec_t iov[num_bufs];
-
-	alloc_iov(iov, num_bufs);
-	fill_pattern(iov, num_bufs);
-
 	file_storage fs = make_fs();
 	test_fileop fop(1);
 	storage_error ec;
 
-	TEST_CHECK(bufs_size({iov, num_bufs}) >= fs.total_size());
+	std::vector<char> buf(std::size_t(fs.total_size()));
+	fill_pattern(buf);
 
-	iovec_t iov2[num_bufs];
-	aux::copy_bufs(iov, int(fs.total_size()), iov2);
-	int num_bufs2 = count_bufs(iov2, int(fs.total_size()));
-	TEST_CHECK(num_bufs2 <= num_bufs);
-
-	int ret = readwritev(fs, {iov2, num_bufs2}, 0_piece, 0, ec
+	int ret = readwrite(fs, buf, 0_piece, 0, ec
 		, std::ref(fop));
 
 	TEST_EQUAL(ret, fs.total_size());
@@ -1292,21 +1347,18 @@ TORRENT_TEST(readwritev_stripe_1)
 	TEST_CHECK(check_pattern(fop.m_file_data[1_file], 3));
 	TEST_CHECK(check_pattern(fop.m_file_data[2_file], 3 + 9));
 	TEST_CHECK(check_pattern(fop.m_file_data[3_file], 3 + 9 + 81));
-
-	free_iov(iov, num_bufs);
 }
 
-TORRENT_TEST(readwritev_single_buffer)
+TORRENT_TEST(readwrite_single_buffer)
 {
 	file_storage fs = make_fs();
 	test_fileop fop(10000000);
 	storage_error ec;
 
 	std::vector<char> buf(size_t(fs.total_size()));
-	iovec_t iov = { &buf[0], int(buf.size()) };
-	fill_pattern(&iov, 1);
+	fill_pattern(buf);
 
-	int ret = readwritev(fs, iov, 0_piece, 0, ec, std::ref(fop));
+	int ret = readwrite(fs, buf, 0_piece, 0, ec, std::ref(fop));
 
 	TEST_EQUAL(ret, fs.total_size());
 	TEST_EQUAL(fop.m_file_data.size(), 4);
@@ -1321,33 +1373,31 @@ TORRENT_TEST(readwritev_single_buffer)
 	TEST_CHECK(check_pattern(fop.m_file_data[3_file], 3 + 9 + 81));
 }
 
-TORRENT_TEST(readwritev_read)
+TORRENT_TEST(readwrite_read)
 {
 	file_storage fs = make_fs();
 	test_read_fileop fop(10000000);
 	storage_error ec;
 
 	std::vector<char> buf(size_t(fs.total_size()));
-	iovec_t iov = { &buf[0], int(buf.size()) };
 
 	// read everything
-	int ret = readwritev(fs, iov, 0_piece, 0, ec, std::ref(fop));
+	int ret = readwrite(fs, buf, 0_piece, 0, ec, std::ref(fop));
 
 	TEST_EQUAL(ret, fs.total_size());
 	TEST_CHECK(check_pattern(buf, 0));
 }
 
-TORRENT_TEST(readwritev_read_short)
+TORRENT_TEST(readwrite_read_short)
 {
 	file_storage fs = make_fs();
 	test_read_fileop fop(100);
 	storage_error ec;
 
 	std::vector<char> buf(size_t(fs.total_size()));
-	iovec_t iov = { buf.data(), static_cast<std::ptrdiff_t>(fs.total_size()) };
 
 	// read everything
-	int ret = readwritev(fs, iov, 0_piece, 0, ec, std::ref(fop));
+	int ret = readwrite(fs, buf, 0_piece, 0, ec, std::ref(fop));
 
 	TEST_EQUAL(static_cast<int>(ec.file()), 3);
 
@@ -1356,43 +1406,41 @@ TORRENT_TEST(readwritev_read_short)
 	TEST_CHECK(check_pattern(buf, 0));
 }
 
-TORRENT_TEST(readwritev_error)
+TORRENT_TEST(readwrite_error)
 {
 	file_storage fs = make_fs();
 	test_error_fileop fop(2_file);
 	storage_error ec;
 
 	std::vector<char> buf(size_t(fs.total_size()));
-	iovec_t iov = { buf.data(), static_cast<std::ptrdiff_t>(fs.total_size()) };
 
 	// read everything
-	int ret = readwritev(fs, iov, 0_piece, 0, ec, std::ref(fop));
+	int ret = readwrite(fs, buf, 0_piece, 0, ec, std::ref(fop));
 
-	TEST_EQUAL(ret, -1);
+	TEST_EQUAL(ret, 12);
 	TEST_EQUAL(static_cast<int>(ec.file()), 2);
 	TEST_CHECK(ec.operation == operation_t::file_read);
 	TEST_EQUAL(ec.ec, boost::system::errc::permission_denied);
 	std::printf("error: %s\n", ec.ec.message().c_str());
 }
 
-TORRENT_TEST(readwritev_zero_size_files)
+TORRENT_TEST(readwrite_zero_size_files)
 {
 	file_storage fs;
-	fs.add_file(combine_path("readwritev", "1"), 3);
-	fs.add_file(combine_path("readwritev", "2"), 0);
-	fs.add_file(combine_path("readwritev", "3"), 81);
-	fs.add_file(combine_path("readwritev", "4"), 0);
-	fs.add_file(combine_path("readwritev", "5"), 6561);
+	fs.add_file(combine_path("readwrite", "1"), 3);
+	fs.add_file(combine_path("readwrite", "2"), 0);
+	fs.add_file(combine_path("readwrite", "3"), 81);
+	fs.add_file(combine_path("readwrite", "4"), 0);
+	fs.add_file(combine_path("readwrite", "5"), 6561);
 	fs.set_piece_length(0x1000);
 	fs.set_num_pieces(aux::calc_num_pieces(fs));
 	test_read_fileop fop(10000000);
 	storage_error ec;
 
 	std::vector<char> buf(size_t(fs.total_size()));
-	iovec_t iov = { buf.data(), static_cast<std::ptrdiff_t>(fs.total_size()) };
 
 	// read everything
-	int ret = readwritev(fs, iov, 0_piece, 0, ec, std::ref(fop));
+	int ret = readwrite(fs, buf, 0_piece, 0, ec, std::ref(fop));
 
 	TEST_EQUAL(ret, fs.total_size());
 	TEST_CHECK(check_pattern(buf, 0));
@@ -1401,7 +1449,7 @@ TORRENT_TEST(readwritev_zero_size_files)
 template <typename StorageType>
 void test_move_storage_to_self()
 {
-	// call move_storage with the path to the exising storage. should be a no-op
+	// call move_storage with the path to the existing storage. should be a no-op
 	std::string const save_path = current_working_directory();
 	std::string const test_path = complete("temp_storage");
 	delete_dirs(test_path);
@@ -1409,14 +1457,14 @@ void test_move_storage_to_self()
 	aux::session_settings set;
 	file_storage fs;
 	std::vector<char> buf;
-	aux::file_view_pool fp;
+	typename file_pool_type<StorageType>::type fp;
 	io_context ios;
 	auto s = setup_torrent<StorageType>(fs, fp, buf, save_path, set);
 
-	iovec_t const b = {&buf[0], 4};
+	span<char> const b = {&buf[0], 4};
 	storage_error se;
 	TEST_EQUAL(se.ec, boost::system::errc::success);
-	writev(s, set, b, 1_piece, 0, aux::open_mode::write, se);
+	write(s, set, b, 1_piece, 0, aux::open_mode::write, se);
 
 	TEST_CHECK(exists(combine_path(test_path, combine_path("folder2", "test3.tmp"))));
 	TEST_CHECK(exists(combine_path(test_path, combine_path("_folder3", "test4.tmp"))));
@@ -1443,13 +1491,13 @@ void test_move_storage_into_self()
 	aux::session_settings set;
 	file_storage fs;
 	std::vector<char> buf;
-	aux::file_view_pool fp;
+	typename file_pool_type<StorageType>::type fp;
 	io_context ios;
 	auto s = setup_torrent<StorageType>(fs, fp, buf, save_path, set);
 
-	iovec_t const b = {&buf[0], 4};
+	span<char> const b = {&buf[0], 4};
 	storage_error se;
-	writev(s, set, b, 2_piece, 0, aux::open_mode::write, se);
+	write(s, set, b, 2_piece, 0, aux::open_mode::write, se);
 
 	std::string const test_path = combine_path(save_path, combine_path("temp_storage", "folder1"));
 	s->move_storage(test_path, move_flags_t::always_replace_files, se);
@@ -1465,7 +1513,49 @@ void test_move_storage_into_self()
 		, combine_path("_folder3", "test4.tmp")))));
 }
 
-#if TORRENT_HAVE_MMAP
+template <typename StorageType>
+void test_move_storage_reset(move_flags_t const flags)
+{
+	std::string const save_path = current_working_directory();
+	std::string const test_path = complete("temp_storage2");
+	delete_dirs(test_path);
+
+	aux::session_settings set;
+	file_storage fs;
+	std::vector<char> buf;
+	typename file_pool_type<StorageType>::type fp;
+	io_context ios;
+	auto s = setup_torrent<StorageType>(fs, fp, buf, save_path, set);
+
+	span<char> const b = {&buf[0], 4};
+	storage_error se;
+	TEST_EQUAL(se.ec, boost::system::errc::success);
+	write(s, set, b, 1_piece, 0, aux::open_mode::write, se);
+
+	std::string const root = combine_path(save_path, "temp_storage");
+	TEST_CHECK(exists(combine_path(root, combine_path("folder2", "test3.tmp"))));
+	TEST_CHECK(exists(combine_path(root, combine_path("_folder3", "test4.tmp"))));
+	std::string const root2 = combine_path(test_path, "temp_storage");
+	TEST_CHECK(!exists(combine_path(root2, combine_path("folder2", "test3.tmp"))));
+	TEST_CHECK(!exists(combine_path(root2, combine_path("_folder3", "test4.tmp"))));
+	TEST_EQUAL(se.ec, boost::system::errc::success);
+
+	std::string new_path;
+	status_t ret;
+	std::tie(ret, new_path) = s->move_storage(test_path, flags, se);
+	TEST_EQUAL(new_path, test_path);
+	TEST_EQUAL(se.ec, boost::system::errc::success);
+	std::cerr << "file: " << se.file() << '\n';
+	std::cerr << "op: " << int(se.operation) << '\n';
+	std::cerr << "ec: " << se.ec.message() << '\n';
+
+	// the root directory is created, but none of the files are moved
+	TEST_CHECK(exists(test_path));
+	TEST_CHECK(!exists(combine_path(root2, combine_path("folder2", "test3.tmp"))));
+	TEST_CHECK(!exists(combine_path(root2, combine_path("_folder3", "test4.tmp"))));
+}
+
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 TORRENT_TEST(move_default_storage_to_self)
 {
 	test_move_storage_to_self<mmap_storage>();
@@ -1476,6 +1566,11 @@ TORRENT_TEST(move_default_storage_into_self)
 	test_move_storage_into_self<mmap_storage>();
 }
 
+TORRENT_TEST(move_default_storage_reset)
+{
+	test_move_storage_reset<mmap_storage>(move_flags_t::reset_save_path);
+	test_move_storage_reset<mmap_storage>(move_flags_t::reset_save_path_unchecked);
+}
 #endif
 
 TORRENT_TEST(move_posix_storage_to_self)
@@ -1486,6 +1581,12 @@ TORRENT_TEST(move_posix_storage_to_self)
 TORRENT_TEST(move_posix_storage_into_self)
 {
 	test_move_storage_into_self<posix_storage>();
+}
+
+TORRENT_TEST(move_posix_storage_reset)
+{
+	test_move_storage_reset<posix_storage>(move_flags_t::reset_save_path);
+	test_move_storage_reset<posix_storage>(move_flags_t::reset_save_path_unchecked);
 }
 
 TORRENT_TEST(storage_paths_string_pooling)
@@ -1500,7 +1601,7 @@ TORRENT_TEST(storage_paths_string_pooling)
 	TEST_CHECK(file_storage.paths().size() <= 2);
 }
 
-#if TORRENT_HAVE_MMAP
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 TORRENT_TEST(dont_move_intermingled_files)
 {
 	std::string const save_path = complete("save_path_1");
@@ -1512,13 +1613,13 @@ TORRENT_TEST(dont_move_intermingled_files)
 	aux::session_settings set;
 	file_storage fs;
 	std::vector<char> buf;
-	aux::file_view_pool fp;
+	typename file_pool_type<mmap_storage>::type fp;
 	io_context ios;
 	auto s = setup_torrent<mmap_storage>(fs, fp, buf, save_path, set);
 
-	iovec_t b = {&buf[0], 4};
+	span<char> b = {&buf[0], 4};
 	storage_error se;
-	s->writev(set, b, 2_piece, 0, aux::open_mode::write, se);
+	s->write(set, b, 2_piece, 0, aux::open_mode::write, disk_job_flags_t{}, se);
 
 	error_code ec;
 	create_directory(combine_path(save_path, combine_path("temp_storage"
@@ -1606,7 +1707,7 @@ void test_unaligned_read(lt::disk_io_constructor_type constructor, Fun fun)
 
 	fun(disk_io.get(), t, ioc, outstanding);
 
-	disk_io->remove_torrent(t);
+	t.reset();
 	disk_io->abort(true);
 }
 
@@ -1744,7 +1845,7 @@ void none_from_store_buffer(lt::disk_interface* disk_io, lt::storage_holder cons
 
 }
 
-#if TORRENT_HAVE_MMAP
+#if TORRENT_HAVE_MMAP || TORRENT_HAVE_MAP_VIEW_OF_FILE
 TORRENT_TEST(mmap_unaligned_read_both_store_buffer)
 {
 	test_unaligned_read(lt::mmap_disk_io_constructor, both_sides_from_store_buffer);
