@@ -674,7 +674,7 @@ if (APPLE)
 	set(BOOST_INCLUDE_DIR "/usr/local/include")
 	set(BOOST_LIB_DIR "/usr/local/lib")
 	set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
-	set(OPENSSL_LIBRARIES "/usr/local/opt/openssl/lib")
+	#set(OPENSSL_LIBRARIES "/usr/local/opt/openssl/lib")
 
     # for ip_notifier
     target_link_libraries(torrent-sirius PRIVATE "-framework CoreFoundation" "-framework SystemConfiguration")
