@@ -6,6 +6,18 @@ if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW) 
 endif()
 
+if(POLICY CMP0144)
+	cmake_policy(SET CMP0144 NEW)
+endif()
+
+if(POLICY CMP0167)
+	cmake_policy(SET CMP0167 NEW)
+endif()
+
+if(POLICY CMP0048)
+	cmake_policy(SET CMP0048 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
