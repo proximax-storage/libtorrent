@@ -1589,7 +1589,7 @@ namespace {
 		// accept connections on our local machine in this case.
 		// TODO: 3 the logic in this if-block should be factored out into a
 		// separate function. At least most of it
-		if ( false )//ret->flags & listen_socket_t::accept_incoming)
+		if (ret->flags & listen_socket_t::accept_incoming)
 		{
 			ret->sock = std::make_shared<tcp::acceptor>(m_io_context);
 			ret->sock->open(bind_ep.protocol(), ec);
@@ -2133,8 +2133,8 @@ namespace {
 				}
 #endif
 
-//				TORRENT_ASSERT(bool(s->flags & listen_socket_t::accept_incoming) == bool(s->sock));
-//				if (s->sock) async_accept(s->sock, s->ssl);
+				TORRENT_ASSERT(bool(s->flags & listen_socket_t::accept_incoming) == bool(s->sock));
+				if (s->sock) async_accept(s->sock, s->ssl);
 			}
 		}
 #ifndef BOOST_NO_EXCEPTIONS
