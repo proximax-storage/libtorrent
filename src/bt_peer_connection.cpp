@@ -2315,13 +2315,14 @@ namespace {
                                     m_other_peer_key,
                                     signature ) )
             {
+#ifdef DEBUG
                 std::cerr << "+++ rd-EXT-handshake-and-verify-it FAILED!!!: " << is_outgoing()
                 << " peer connection established: " << delegate->dbgOurPeerName()
                 << " from: "  << (int)m_other_peer_key[0]
                 << " hash: "  << (int)m_other_peer_hash[0]
                 << " flags: " << torrent->m_siriusFlags
                 << std::endl << std::flush;
-
+#endif
                 disconnect(errors::invalid_encrypt_handshake, operation_t::handshake);
             }
             else
@@ -3957,6 +3958,7 @@ namespace {
                     auto connection_status = delegate->acceptReplicatorConnection( *torrent->m_driveKey.get(), m_other_peer_key );
                     if ( connection_status == connection_status::REJECTED )
                     {
+#ifdef DEBUG
                         std::cerr << "+++ ERROR? connection is not accepted '"
                                   << delegate->dbgOurPeerName()
                                   << " "
@@ -3969,7 +3971,7 @@ namespace {
                                   << " "
                                   << m_remote.port()
                                   << std::endl;
-
+#endif
                         //todo? - errors::error_code_max, operation_t::unknown
                         disconnect( errors::reserved, operation_t::unknown );
                         return;
