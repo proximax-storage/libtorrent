@@ -12,7 +12,7 @@ set(CMAKE_CXX_EXTENSIONS ON)
 
 add_definitions(-w)
 add_definitions(-DSIRIUS_INTEREST_MESSAGE_ENABLED)
-add_definitions(-DSIRIUS_CHOKE_MESSAGE_ENABLED)
+#add_definitions(-DSIRIUS_CHOKE_MESSAGE_ENABLED)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 include(LibtorrentMacros)
