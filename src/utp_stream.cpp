@@ -80,14 +80,37 @@ static struct utp_logger
 	}
 } log_file_holder;
 
+void print_time() {
+    // Get the current time
+    auto now = std::chrono::system_clock::now();
+
+    // Convert to time_t for the base date/time
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    auto local_time = *std::localtime(&time_t_now);
+
+    // Extract microseconds
+    auto duration_since_epoch = now.time_since_epoch();
+    auto seconds_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(duration_since_epoch);
+    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration_since_epoch - seconds_since_epoch);
+
+    // Format the time with printf
+    char buffer[40];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &local_time);
+    //printf("%s.%03ld\n", buffer, microseconds.count()/1000);
+    std::fprintf(log_file_holder.utp_log_file, "[%s.%03ld]: ", buffer, microseconds.count()/1000 );
+}
+
 TORRENT_FORMAT(1, 2)
 void utp_log(char const* fmt, ...)
 {
-	if (log_file_holder.utp_log_file == nullptr) return;
+	//if (log_file_holder.utp_log_file == nullptr) return;
+    set_utp_stream_logging(true);
 
 	std::lock_guard<std::mutex> lock(log_file_holder.utp_log_mutex);
-	static time_point start = clock_type::now();
-	std::fprintf(log_file_holder.utp_log_file, "[%012" PRId64 "] ", total_microseconds(clock_type::now() - start));
+//	static time_point start = clock_type::now();
+//	std::fprintf(log_file_holder.utp_log_file, "[%012" PRId64 "] ", total_microseconds(clock_type::now() - start));
+    print_time();
+    
 	va_list l;
 	va_start(l, fmt);
 	vfprintf(log_file_holder.utp_log_file, fmt, l);
@@ -103,7 +126,7 @@ void set_utp_stream_logging(bool enable) {
 	{
 		if (log_file_holder.utp_log_file == nullptr)
 		{
-			log_file_holder.utp_log_file = fopen("utp.log", "w+");
+			log_file_holder.utp_log_file = fopen("/tmp/replicator_service_logs/utp.log", "w+");
 		}
 	}
 	else
@@ -2239,7 +2262,7 @@ void utp_socket_impl::init_mtu(int const mtu)
 	// set it to one
 	if ((m_cwnd >> 16) < m_mtu) m_cwnd = std::int64_t(m_mtu) * (1 << 16);
 
-	UTP_LOGV("%8p: initializing MTU to: %d [%d, %d]\n"
+	UTP_LOGV("%8p: ---------------------- initializing MTU to: %d [%d, %d]\n"
 		, static_cast<void*>(this), m_mtu, m_mtu_floor, m_mtu_ceiling);
 }
 
@@ -2247,6 +2270,10 @@ void utp_socket_impl::init_mtu(int const mtu)
 bool utp_socket_impl::incoming_packet(span<char const> b
 	, udp::endpoint const& ep, time_point receive_time)
 {
+    
+    UTP_LOG("%8p: incoming packet from: %s\n"
+        , static_cast<void*>(this), print_endpoint(ep).c_str() );
+
 	INVARIANT_CHECK;
 	span<std::uint8_t const> const buf(reinterpret_cast<std::uint8_t const*>(b.data()), b.size());
 
