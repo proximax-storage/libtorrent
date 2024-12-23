@@ -146,7 +146,7 @@ namespace aux { struct alert_manager; }
 
 		bool active_socks5() const;
 
-	private:
+	public:
 
 		void wrap(udp::endpoint const& ep, span<char const> p, error_code& ec, udp_send_flags_t flags);
 		void wrap(char const* hostname, int port, span<char const> p, error_code& ec, udp_send_flags_t flags);

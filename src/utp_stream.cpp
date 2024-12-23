@@ -193,7 +193,7 @@ utp_socket_impl::utp_socket_impl(std::uint16_t const recv_id
 	, m_state(static_cast<std::uint8_t>(state_t::none))
 	, m_eof(false)
 	, m_attached(true)
-	, m_nagle(false)
+	, m_nagle(true)
 	, m_slow_start(true)
 	, m_cwnd_full(false)
 	, m_null_buffers(false)
@@ -1333,7 +1333,8 @@ bool utp_socket_impl::send_pkt(int const flags)
 	INVARIANT_CHECK;
 #endif
 
-	bool const force = (flags & pkt_ack) || (flags & pkt_fin);
+    //bool const force = (flags & pkt_ack) || (flags & pkt_fin);
+    bool const force = true;
 
 //	TORRENT_ASSERT(state() != state_t::fin_sent || (flags & pkt_ack));
 
@@ -3509,15 +3510,13 @@ namespace aux {
     bool utp_socket_manager::incoming_packet(std::weak_ptr<utp_socket_interface> socket
         , udp::endpoint const& ep, span<char const> p)
     {
-        UTP_LOGV("incoming packet from: %s\n", print_endpoint(ep).c_str());
-
-
         if (p.size() < std::ptrdiff_t(sizeof(utp_header))) return false;
 
         auto const* ph = reinterpret_cast<utp_header const*>(p.data());
 
-        UTP_LOGV("incoming packet version:%d\n", int(ph->get_version()));
+        UTP_LOGV("incoming packet version:%d  from: %s\n", int(ph->get_version()), print_endpoint(ep).c_str());
 
+//        if (ph->get_version() != 1 && ph->get_version() != 8) return false;
         if (ph->get_version() != 1) return false;
 
         const time_point receive_time = clock_type::now();

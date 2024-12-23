@@ -2494,6 +2494,13 @@ namespace {
 		, std::weak_ptr<listen_socket_t> ls, transport const ssl, error_code const& ec)
 	{
 		COMPLETE_ASYNC("session_impl::on_udp_packet");
+        
+        session_log( "on_udp_packet from" );
+//        if ( std::shared_ptr<session_udp_socket> s = socket.lock(); s ) {
+//            udp::endpoint ep = s->sock.m_socket.remote_endpoint(); //s->local_endpoint();
+//            session_log( "on_udp_packet from: %s", print_endpoint(ep).c_str() );
+//        }
+
 		if (ec)
 		{
 			std::shared_ptr<session_udp_socket> s = socket.lock();
