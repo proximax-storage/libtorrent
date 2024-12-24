@@ -60,6 +60,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/socket_io.hpp"
 #endif
 
+#define logx(expr...) printf(expr);
+
+
+
 namespace libtorrent {
 namespace aux {
 
@@ -936,7 +940,7 @@ void utp_socket_impl::send_syn()
 	if (ec == error::would_block || ec == error::try_again)
 	{
 #if TORRENT_UTP_LOG
-		UTP_LOGV("%8p: socket stalled\n", static_cast<void*>(this));
+		UTP_LOGV("%8p: @@@ socket stalled\n", static_cast<void*>(this));
 #endif
 		if (!m_stalled)
 		{
@@ -946,7 +950,11 @@ void utp_socket_impl::send_syn()
 	}
 	else if (ec)
 	{
-		release_packet(std::move(p));
+        UTP_LOGV("%8p: send_syn::error:%s target:%s\n"
+            , static_cast<void*>(this), ec.message().c_str()
+            , print_endpoint(udp::endpoint(m_remote_address, m_port)).c_str());
+
+        release_packet(std::move(p));
 		m_error = ec;
 		set_state(state_t::error_wait);
 		test_socket_state();
@@ -2256,6 +2264,7 @@ void utp_socket_impl::init_mtu(int const mtu)
 
 	// start in the middle of the PMTU search space
 	m_mtu = (m_mtu_ceiling + m_mtu_floor) / 2;
+    m_mtu = 900;
 	if (m_mtu > m_mtu_ceiling) m_mtu = m_mtu_ceiling;
 	if (m_mtu_floor > mtu) m_mtu_floor = std::uint16_t(mtu);
 
@@ -3515,6 +3524,7 @@ namespace aux {
         auto const* ph = reinterpret_cast<utp_header const*>(p.data());
 
         UTP_LOGV("incoming packet version:%d  from: %s\n", int(ph->get_version()), print_endpoint(ep).c_str());
+        logx("@@@ incoming packet version:%d  from: %s\n", int(ph->get_version()), print_endpoint(ep).c_str());
 
 //        if (ph->get_version() != 1 && ph->get_version() != 8) return false;
         if (ph->get_version() != 1) return false;

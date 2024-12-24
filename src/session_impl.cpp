@@ -2453,11 +2453,13 @@ namespace {
 		TORRENT_ASSERT(s->sock.is_closed() || s->sock.local_endpoint().protocol() == ep.protocol());
 
 		s->sock.send(ep, p, ec, flags);
+        session_log( "@@@ s->sock.send: to:%s ec:%s", print_endpoint(ep).c_str(), print_error(ec).c_str() );
 
 		if ((ec == error::would_block || ec == error::try_again) && !s->write_blocked)
 		{
 			s->write_blocked = true;
 			ADD_OUTSTANDING_ASYNC("session_impl::on_udp_writeable");
+            session_log( "@@@ s->sock.async_write: to:%s", print_endpoint(ep).c_str() );
 			s->sock.async_write(std::bind(&session_impl::on_udp_writeable
 				, this, s, _1));
 		}
@@ -2465,7 +2467,9 @@ namespace {
 
 	void session_impl::on_udp_writeable(std::weak_ptr<session_udp_socket> sock, error_code const& ec)
 	{
-		COMPLETE_ASYNC("session_impl::on_udp_writeable");
+        session_log( "@@@ on_udp_writeable: s->write_blocked ?= false ec:%s", print_error(ec).c_str() );
+
+        COMPLETE_ASYNC("session_impl::on_udp_writeable");
 		if (ec) return;
 
 		auto s = sock.lock();
@@ -2495,7 +2499,6 @@ namespace {
 	{
 		COMPLETE_ASYNC("session_impl::on_udp_packet");
         
-        session_log( "on_udp_packet from" );
 //        if ( std::shared_ptr<session_udp_socket> s = socket.lock(); s ) {
 //            udp::endpoint ep = s->sock.m_socket.remote_endpoint(); //s->local_endpoint();
 //            session_log( "on_udp_packet from: %s", print_endpoint(ep).c_str() );
@@ -2519,7 +2522,7 @@ namespace {
 #ifndef TORRENT_DISABLE_LOGGING
 			if (should_log())
 			{
-				session_log("UDP error: %s (%d) %s"
+				session_log("@@@ UDP error: %s (%d) %s"
 					, print_endpoint(ep).c_str(), ec.value(), ec.message().c_str());
 			}
 #endif
@@ -2529,7 +2532,11 @@ namespace {
 		m_stats_counters.inc_stats_counter(counters::on_udp_counter);
 
 		std::shared_ptr<session_udp_socket> s = socket.lock();
-		if (!s) return;
+		if (!s)
+        {
+            session_log( "@@@ cannot socket.lock()" );
+            return;
+        }
 
 		struct utp_socket_manager& mgr =
 #ifdef TORRENT_SSL_PEERS
@@ -2545,11 +2552,16 @@ namespace {
 
 			for (udp_socket::packet& packet : span<udp_socket::packet>(p).first(num_packets))
 			{
+                session_log("@@@ incomig packet from: %s [size=%d] %.*s", print_endpoint(packet.from).c_str(), int(packet.data.size()), int(packet.data.size()), packet.data.data() );
+
 				if (packet.error)
 				{
 					// TODO: 3 it would be neat if the utp socket manager would
 					// handle ICMP errors too
-
+                    session_log("@@@ packet.error: %s (%d) %s"
+                        , print_endpoint(packet.from).c_str()
+                        , packet.error.value()
+                        , packet.error.message().c_str());
 #ifndef TORRENT_DISABLE_DHT
 					if (m_dht)
 						m_dht->incoming_error(packet.error, packet.from);
@@ -2565,6 +2577,8 @@ namespace {
 				// the majority of packets are uTP packets.
 				if (!mgr.incoming_packet(ls, packet.from, buf))
 				{
+                    session_log("@@@ incomig packet from: dht?");
+
 					// if it wasn't a uTP packet, try the other users of the UDP
 					// socket
 					bool handled = false;
