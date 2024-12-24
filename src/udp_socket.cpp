@@ -315,6 +315,7 @@ void udp_socket::send(udp::endpoint const& ep, span<char const> p
 	// if the sockets are closed, the udp_socket is closing too
 	if (!is_open())
 	{
+        printf("@@@1 !is_open()\n");
 		ec = error_code(boost::system::errc::bad_file_descriptor, generic_category());
 		return;
 	}
@@ -327,6 +328,7 @@ void udp_socket::send(udp::endpoint const& ep, span<char const> p
 
 	if (use_proxy && m_proxy_settings.type != settings_pack::none)
 	{
+        printf("@@@2 use_proxy\n");
 		if (active_socks5())
 		{
 			// send udp packets through SOCKS5 server
@@ -343,6 +345,7 @@ void udp_socket::send(udp::endpoint const& ep, span<char const> p
 	set_dont_frag df(m_socket, false //(flags & dont_fragment)
 		&& aux::is_v4(ep));
 
+    printf("@@@3 m_socket.send_to: %d (set_dont_frag=%d)\n", p.size(), (flags & dont_fragment) );
 	m_socket.send_to(boost::asio::buffer(p.data(), static_cast<std::size_t>(p.size())), ep, 0, ec);
 }
 

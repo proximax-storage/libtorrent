@@ -2453,7 +2453,7 @@ namespace {
 		TORRENT_ASSERT(s->sock.is_closed() || s->sock.local_endpoint().protocol() == ep.protocol());
 
 		s->sock.send(ep, p, ec, flags);
-        session_log( "@@@ s->sock.send: to:%s ec:%s", print_endpoint(ep).c_str(), print_error(ec).c_str() );
+        session_log( "@@@ s->sock.send to:%s [%d] ec:%s", print_endpoint(ep).c_str(), p.size(), print_error(ec).c_str() );
 
 		if ((ec == error::would_block || ec == error::try_again) && !s->write_blocked)
 		{
